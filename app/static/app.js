@@ -11,10 +11,29 @@ const DELETED_COLOR = 'rgba(120, 120, 120, 0.22)';
 const KIND_LABEL = { silence: 'שקט', filler: 'מילוי', manual: 'חיתוך' };
 
 // ------------------------------------------------------------------ desktop / engine
-// בחלון טאורי הממשק מוגש מ-tauri.localhost והמנוע (server.py) רץ בנפרד על 127.0.0.1.
-// בדפדפן רגיל השרת מגיש גם את הממשק, אז הכתובות יחסיות.
+// בחלון טאורי הממשק מוגש מ-tauri.localhost והמנוע (server.py) רץ בנפרד על 127.0.0.1,
+// בפורט ועם טוקן שהמעטפת בוחרת בכל הפעלה (הפקודה engine_info).
+// בדפדפן רגיל השרת מגיש גם את הממשק, אז הכתובות יחסיות ואין טוקן.
 const TAURI = window.__TAURI__ || null;
-const API = TAURI ? 'http://127.0.0.1:8765' : '';
+let API = '';
+let TOKEN = '';
+let ENGINE_ERROR = null;
+
+async function connectEngine() {
+  if (!TAURI) return;
+  const info = await TAURI.core.invoke('engine_info');
+  API = `http://127.0.0.1:${info.port}`;
+  TOKEN = info.token || '';
+  ENGINE_ERROR = info.error || null;
+}
+
+// Headers for every engine call; media URLs carry the token as ?t= instead.
+function authHeaders(extra = {}) {
+  return TOKEN ? { ...extra, 'X-Tamlul-Token': TOKEN } : extra;
+}
+function mediaUrl(path) {
+  return API + path + (TOKEN ? `?t=${encodeURIComponent(TOKEN)}` : '');
+}
 
 const MEDIA_EXT = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4a', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'wma'];
 const AUDIO_EXT = ['m4a', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'wma', 'mp4'];
@@ -41,11 +60,27 @@ function openExternal(url) {
 async function waitForEngine(timeoutMs = 90000) {
   const t0 = Date.now();
   let shown = false;
+  const fail = (title, msg) => {
+    $('#jobTitle').textContent = title;
+    $('#jobMsg').textContent = msg;
+    $('#jobBar').parentElement.classList.add('hidden');
+    $('#jobCancel').classList.add('hidden');
+    $('#jobOverlay').classList.remove('hidden');
+    throw new Error(title);
+  };
+  if (ENGINE_ERROR) fail('המנוע לא עלה', ENGINE_ERROR);
   for (;;) {
     try {
-      const r = await fetch(API + '/api/settings', { cache: 'no-store' });
-      if (r.ok) break;
-    } catch (_) { /* not up yet */ }
+      const r = await fetch(API + '/api/health', { cache: 'no-store', headers: authHeaders() });
+      const h = r.ok ? await r.json() : null;
+      if (h && h.app === 'tamlul') {
+        if (!h.authed) fail('המנוע לא מזוהה', 'תוכנה אחרת עונה בפורט של המנוע. סגור את התוכנה ופתח אותה מחדש.');
+        break;
+      }
+    } catch (e) {
+      if (e.message === 'המנוע לא מזוהה') throw e;
+      /* not up yet */
+    }
     if (!shown && Date.now() - t0 > 400) {
       $('#jobTitle').textContent = 'טוען את מנוע התמלול…';
       $('#jobMsg').textContent = 'בפעם הראשונה אחרי הדלקת המחשב זה יכול לקחת עד דקה.';
@@ -73,8 +108,9 @@ async function api(path, opts = {}) {
   const o = { ...opts };
   if (o.body && typeof o.body !== 'string') {
     o.body = JSON.stringify(o.body);
-    o.headers = { 'Content-Type': 'application/json' };
+    o.headers = { ...o.headers, 'Content-Type': 'application/json' };
   }
+  o.headers = authHeaders(o.headers);
   const r = await fetch(API + path, o);
   let data = null;
   try { data = await r.json(); } catch (_) { /* empty */ }
@@ -548,7 +584,7 @@ function teardownEditor() {
 
 async function buildEditor() {
   const base = `/api/projects/${P.id}`;
-  video.src = `${API}${base}/media/main`;
+  video.src = mediaUrl(`${base}/media/main`);
   $('#audioOnly').classList.toggle('hidden', !!P.main.has_video);
   video.onerror = () => toast('הדפדפן לא מצליח לנגן את הקובץ הזה. נסה להמיר אותו ל-MP4.', { error: true, timeout: 12000 });
 
@@ -1599,7 +1635,7 @@ async function aiAsk({ preset = null, question = null, label }) {
   };
   try {
     const r = await fetch(`${API}/api/projects/${P.id}/ai`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ preset, question, label, edited }), signal: aiCtrl.signal,
     });
     if (!r.ok) {
@@ -1704,6 +1740,7 @@ $('#aiKeySave').onclick = async () => {
 // ------------------------------------------------------------------ start
 (async function init() {
   renderNewProject();
+  try { await connectEngine(); } catch (e) { ENGINE_ERROR = 'engine_info: ' + e; }
   try { await waitForEngine(); } catch (_) { return; }
   try { await loadSettings(); } catch (e) { toast('לא מצליח להתחבר לתוכנה: ' + e.message, { error: true }); }
   window.ENROLLED = await api('/api/speakers').catch(() => []);

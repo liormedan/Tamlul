@@ -47,9 +47,10 @@ cd src-tauri && cargo build
 
 ## הארכיטקטורה בענף `tauri`
 
-- `src-tauri/src/lib.rs` — בעלייה מפעיל `.venv\Scripts\python.exe app\server.py` (פלט ל-`data/engine.log`) אלא אם פורט 8765 תפוס. מכניס את עצמו ל-Windows job object עם `KILL_ON_JOB_CLOSE`: ה-python של ה-venv הוא משגר שמריץ python שני, ובלי ה-job התהליך השני נשאר יתום.
-- `app/static/app.js` — `TAURI`/`API` בראש הקובץ: בטאורי הקריאות הולכות ל-`http://127.0.0.1:8765`, בדפדפן יחסיות. `waitForEngine()` מציג מסך המתנה עד שהמנוע עונה (90 שניות, אחר כך הודעת שגיאה). `pickFiles()` משתמש ב-`tauri-plugin-dialog`, `openExternal()` ב-`tauri-plugin-opener`.
-- `app/server.py` — CORS לכתובת `http://tauri.localhost` בלבד. `/` מפנה ל-`/static/index.html` כי `index.html` עבר לנתיבים יחסיים.
+- `src-tauri/src/lib.rs` — בעלייה בוחר פורט פנוי וטוקן אקראי, ומפעיל `.venv\Scripts\python.exe app\server.py` עם `TAMLUL_PORT` ו-`TAMLUL_TOKEN` (פלט ל-`data/engine.log`). הפקודה `engine_info` מחזירה לממשק פורט, טוקן ושגיאת הפעלה אם הייתה. אם `TAMLUL_PORT` מוגדר לפני ההפעלה, מתחבר למנוע קיים במקום להפעיל חדש. מכניס את עצמו ל-Windows job object עם `KILL_ON_JOB_CLOSE`: ה-python של ה-venv הוא משגר שמריץ python שני, ובלי ה-job התהליך השני נשאר יתום.
+- `app/static/app.js` — `connectEngine()` קורא ל-`engine_info` וממלא את `API` ו-`TOKEN`. בדפדפן הכתובות יחסיות ואין טוקן. `authHeaders()` מוסיף `X-Tamlul-Token`, ו-`mediaUrl()` מוסיף `?t=` לכתובת הווידאו. `waitForEngine()` בודק `/api/health` ונעצר עם הודעה אם המנוע לא מזהה את הטוקן.
+- `app/server.py` — CORS לכתובת `http://tauri.localhost` בלבד. `TokenGuard` (ASGI, לפני CORS) דורש את הטוקן בכל `/api` חוץ מ-`/api/health`, רק כש-`TAMLUL_TOKEN` מוגדר. `/` מפנה ל-`/static/index.html` כי `index.html` עבר לנתיבים יחסיים.
+- `src-tauri/tauri.conf.json` — CSP: סקריפטים רק מהאפליקציה, חיבורים ומדיה רק ל-`127.0.0.1`.
 
 ## מה נבדק (במחשב הקודם)
 
@@ -65,7 +66,7 @@ cd src-tauri && cargo build
 1. **תמלול אמיתי בחלון טאורי לא נבדק.** הבדיקה נעצרה בגלל זיכרון: במחשב הקודם 7.8GB RAM, MX110 עם 2GB (לא תומך float16 → נפילה ל-CPU int8, איטי). אם למחשב החדש יש כרטיס NVIDIA חזק יותר — לבדוק שם. קובץ בדיקה קצר אפשר ליצור עם קול "Asaf" של Windows (he-IL, ‏OneCore TTS).
 2. **מתקין.** אין. המלצה: ה-NSIS של טאורי מריץ את `install.bat` שבונה venv. לא לארוז את torch ב-PyInstaller (3–5GB, שביר).
 3. **אייקונים** — ברירת המחדל של טאורי (`src-tauri/icons`).
-4. **פורט 8765 קבוע** ב-`lib.rs` וב-`app.js`.
+4. ~~**פורט 8765 קבוע**~~ — נפתר בשלב 1: פורט דינמי וטוקן לכל הפעלה.
 5. **PR מ-`tauri` ל-`main`** — רק באישור של Lior.
 6. **ניקוי:** `app/static/index1.html` נראה שארית. ה-README מזכיר `installer/tamlul.nsi` שלא קיים.
 7. **חיסכון בזיכרון (רעיון, לא נבדק):** להחליף את מנוע התמלול ב-whisper.cpp עם מודל מכווץ. צריך לבדוק אם ivrit.ai מפרסמים גרסה כזו ומה המחיר בדיוק.

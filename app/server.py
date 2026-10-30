@@ -2,6 +2,7 @@
 שרת מקומי של תוכנת התמלול. רץ על המחשב בלבד (127.0.0.1) ופותח את העורך בדפדפן.
 Local server: python app/server.py  ->  http://127.0.0.1:8765
 """
+import hmac
 import json
 import os
 import re
@@ -36,6 +37,12 @@ for d in (DATA, PROJECTS, EXPORTS):
     d.mkdir(parents=True, exist_ok=True)
 
 PORT = int(os.environ.get("TAMLUL_PORT", "8765"))
+APP_VERSION = "0.1.0"
+API_VERSION = 1
+# The Tauri shell starts the engine with a random per-launch token. When it is set, every /api call
+# must carry it, so other programs on this computer cannot drive the engine. Browser mode and the
+# pywebview window start without a token and keep working as before.
+TOKEN = os.environ.get("TAMLUL_TOKEN") or None
 
 DEFAULT_SETTINGS = {
     "vocabulary": [],
@@ -48,7 +55,38 @@ DEFAULT_SETTINGS = {
     "srt_rtl_fix": False,
 }
 
+def _authorized(scope):
+    """Header X-Tamlul-Token, or ?t= for media URLs (a <video src> cannot send headers)."""
+    sent = ""
+    for k, v in scope.get("headers") or ():
+        if k == b"x-tamlul-token":
+            sent = v.decode("latin-1")
+            break
+    if not sent and "/media/" in scope["path"]:
+        from urllib.parse import parse_qs
+        sent = (parse_qs(scope.get("query_string", b"").decode("latin-1")).get("t") or [""])[0]
+    return hmac.compare_digest(sent.encode(), TOKEN.encode())
+
+
+class TokenGuard:
+    """Plain ASGI middleware (not BaseHTTPMiddleware) so streaming responses pass through untouched.
+    Added before CORS, so CORS stays the outer layer: preflights are answered there and a 401 still
+    carries the CORS headers the window needs to read it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (TOKEN and scope["type"] == "http" and scope["path"].startswith("/api/")
+                and scope["path"] != "/api/health" and scope.get("method") != "OPTIONS"
+                and not _authorized(scope)):
+            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 app = FastAPI()
+app.add_middleware(TokenGuard)
 # חלון הטאורי מגיש את הממשק מ-tauri.localhost וקורא לשרת הזה ישירות
 app.add_middleware(
     CORSMiddleware,
@@ -283,6 +321,18 @@ async def api_pick(req: Request):
         import asyncio
         files = await asyncio.get_running_loop().run_in_executor(None, pick)
     return {"files": [str(Path(f)) for f in files]}
+
+
+# ---------------------------------------------------------------- API: health
+@app.get("/api/health")
+def api_health(req: Request):
+    """Open without a token. `authed` tells the caller whether its token matches this engine, so the
+    shell can tell its own engine from another program that happens to answer on the port."""
+    sent = req.headers.get("x-tamlul-token", "")
+    return {"app": "tamlul", "version": APP_VERSION, "api": API_VERSION,
+            "authed": (not TOKEN) or hmac.compare_digest(sent.encode(), TOKEN.encode()),
+            "token_required": bool(TOKEN), "fake": engine.FAKE,
+            "device": engine._whisper_device}  # None until the first transcription loads the model
 
 
 # ---------------------------------------------------------------- API: projects
