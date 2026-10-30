@@ -1,0 +1,12 @@
+# PyTorch (CUDA 12.4) is installed separately by install.bat:
+#   torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+faster-whisper==1.1.1
+ctranslate2==4.5.0
+av==13.1.0
+numpy==1.26.4
+speechbrain==1.0.3
+huggingface_hub==0.26.5
+fastapi==0.115.6
+uvicorn==0.34.0
+python-docx==1.1.2
+imageio-ffmpeg==0.6.0

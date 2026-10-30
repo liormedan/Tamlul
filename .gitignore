@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Downloaded models (install.bat / app/setup_models.py fetch them)
+models/
+
+# User data: projects, speaker voice prints, settings, API key (data/ai.json)
+data/
+exports/
+
+# Secrets
+.env
+
+# Claude Code local settings
+.claude/settings.local.json

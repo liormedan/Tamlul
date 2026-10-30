@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tamlul",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set TAMLUL_NO_BROWSER=1&& .venv\\Scripts\\python.exe app\\server.py"],
+      "port": 8765
+    },
+    {
+      "name": "tamlul-fake",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set TAMLUL_FAKE=1&& set TAMLUL_NO_BROWSER=1&& set TAMLUL_PORT=8766&& .venv\\Scripts\\python.exe app\\server.py"],
+      "port": 8766
+    }
+  ]
+}
