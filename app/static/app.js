@@ -18,13 +18,76 @@ const TAURI = window.__TAURI__ || null;
 let API = '';
 let TOKEN = '';
 let ENGINE_ERROR = null;
+let ENGINE = null; // last engine_info: {port, token, error, generation, attached}
+let EXITED_GEN = 0; // generation of the last engine that exited on its own
+let WAITING_FOR_ENGINE = false;
+const ENGINE_GONE = () => !!ENGINE && EXITED_GEN === ENGINE.generation;
 
-async function connectEngine() {
-  if (!TAURI) return;
-  const info = await TAURI.core.invoke('engine_info');
+function applyEngineInfo(info) {
+  ENGINE = info;
   API = `http://127.0.0.1:${info.port}`;
   TOKEN = info.token || '';
   ENGINE_ERROR = info.error || null;
+}
+
+async function connectEngine() {
+  if (!TAURI) return;
+  applyEngineInfo(await TAURI.core.invoke('engine_info'));
+  // The shell reports when the engine process stops on its own (crash, killed, out of memory).
+  TAURI.event.listen('engine-exited', (e) => {
+    if (!ENGINE || e.payload.generation !== ENGINE.generation) return; // an engine we already replaced
+    EXITED_GEN = e.payload.generation;
+    if (WAITING_FOR_ENGINE) return; // waitForEngine notices and reports it itself
+    stopWatchingJob();
+    $('#jobOverlay').classList.add('hidden');
+    const code = e.payload.code == null ? '' : ` (קוד ${e.payload.code})`;
+    showEngineProblem('מנוע התמלול נסגר', `המנוע הפסיק לפעול${code}. עבודה שרצה באותו רגע נקטעה. אפשר להפעיל אותו מחדש בלי לסגור את התוכנה.`);
+  });
+}
+
+// ------------------------------------------------------------------ engine problems, restart, log
+async function engineLogText(lines = 150) {
+  try { return await TAURI.core.invoke('engine_log', { lines }); } catch (e) { return 'לא ניתן לקרוא את היומן: ' + e; }
+}
+
+function showEngineProblem(title, msg) {
+  const canRestart = TAURI && ENGINE && !ENGINE.attached;
+  openModal(`<h2>${esc(title)}</h2>
+    <p>${esc(msg)}</p>
+    <div class="row">
+      ${canRestart ? '<button class="btn primary" id="engRestart">הפעל את המנוע מחדש</button>' : ''}
+      ${TAURI ? '<button class="btn ghost" id="engLogBtn">הצג יומן</button>' : ''}
+    </div>
+    <pre class="engine-log hidden" id="engLog" dir="ltr"></pre>`);
+  $('#engRestart')?.addEventListener('click', restartEngine);
+  $('#engLogBtn')?.addEventListener('click', async () => {
+    const pre = $('#engLog');
+    pre.textContent = await engineLogText();
+    pre.classList.remove('hidden');
+    pre.scrollTop = pre.scrollHeight;
+  });
+}
+
+async function restartEngine() {
+  const btn = $('#engRestart') || $('#stEngRestart');
+  if (btn) { btn.disabled = true; btn.textContent = 'מפעיל מחדש…'; }
+  try {
+    applyEngineInfo(await TAURI.core.invoke('restart_engine'));
+  } catch (e) {
+    showEngineProblem('ההפעלה מחדש נכשלה', String(e));
+    return;
+  }
+  closeModal();
+  try { await waitForEngine(); } catch (_) { return; }
+  // Media URLs carry the old port, so an open project has to be reopened; save local edits first.
+  if (P && !$('#editor').classList.contains('hidden')) {
+    await saveNow();
+    if (dirty) { toast('המנוע חזר, אבל השינויים האחרונים לא נשמרו. נסה לשמור שוב לפני שתמשיך.', { error: true, timeout: 12000 }); return; }
+    openProject(P.id);
+  } else {
+    showHome();
+  }
+  toast('מנוע התמלול הופעל מחדש');
 }
 
 // Headers for every engine call; media URLs carry the token as ?t= instead.
@@ -58,14 +121,17 @@ function openExternal(url) {
 
 // The engine loads torch and the models' code at startup; wait for it before the first call.
 async function waitForEngine(timeoutMs = 90000) {
+  WAITING_FOR_ENGINE = true;
+  try { await waitForEngineInner(timeoutMs); } finally { WAITING_FOR_ENGINE = false; }
+}
+async function waitForEngineInner(timeoutMs) {
   const t0 = Date.now();
   let shown = false;
   const fail = (title, msg) => {
-    $('#jobTitle').textContent = title;
-    $('#jobMsg').textContent = msg;
-    $('#jobBar').parentElement.classList.add('hidden');
-    $('#jobCancel').classList.add('hidden');
-    $('#jobOverlay').classList.remove('hidden');
+    $('#jobOverlay').classList.add('hidden');
+    $('#jobBar').parentElement.classList.remove('hidden');
+    $('#jobCancel').classList.remove('hidden');
+    showEngineProblem(title, msg);
     throw new Error(title);
   };
   if (ENGINE_ERROR) fail('המנוע לא עלה', ENGINE_ERROR);
@@ -81,6 +147,7 @@ async function waitForEngine(timeoutMs = 90000) {
       if (e.message === 'המנוע לא מזוהה') throw e;
       /* not up yet */
     }
+    if (ENGINE_GONE()) fail('מנוע התמלול נסגר', 'המנוע נסגר בזמן שעלה. היומן מראה מה קרה.');
     if (!shown && Date.now() - t0 > 400) {
       $('#jobTitle').textContent = 'טוען את מנוע התמלול…';
       $('#jobMsg').textContent = 'בפעם הראשונה אחרי הדלקת המחשב זה יכול לקחת עד דקה.';
@@ -90,9 +157,9 @@ async function waitForEngine(timeoutMs = 90000) {
       shown = true;
     }
     if (Date.now() - t0 > timeoutMs) {
-      $('#jobTitle').textContent = 'המנוע לא עלה';
-      $('#jobMsg').textContent = 'הפרטים בקובץ data\\engine.log בתיקיית התוכנה. אם חסרה התקנה – להריץ install.bat.';
-      throw new Error('engine did not start');
+      fail('המנוע לא עלה', TAURI
+        ? 'מנוע התמלול לא ענה תוך דקה וחצי. היומן מראה מה קרה. אם חסרה התקנה, צריך להריץ את install.bat.'
+        : 'הפרטים בקובץ data\\engine.log בתיקיית התוכנה. אם חסרה התקנה – להריץ install.bat.');
     }
     await new Promise((res) => setTimeout(res, 500));
   }
@@ -243,8 +310,28 @@ async function openSettings() {
       <button class="btn small primary" data-url="billing">קניית קרדיטים ↗</button></div>
     <p class="hint">הקרדיט נקנה באתר של Claude (כרטיס אשראי, אפשר גם טעינה אוטומטית). ההוצאה המוצגת כאן היא הערכה של התוכנה; הסכום המדויק מופיע בעמוד החיוב באתר.</p>
 
+    ${TAURI ? `<h3>מנוע התמלול</h3>
+    <div class="row"><label>מצב</label><span class="hint" id="stEngState">בודק…</span></div>
+    <div class="row">
+      <button class="btn small" id="stEngLog">הצג יומן</button>
+      ${ENGINE && !ENGINE.attached ? '<button class="btn small ghost" id="stEngRestart">הפעל את המנוע מחדש</button>' : ''}</div>
+    <pre class="engine-log hidden" id="stEngLogText" dir="ltr"></pre>` : ''}
+
     <div class="row" style="margin-top:1.4rem"><button class="btn primary" id="stSave">שמור הגדרות</button></div>
   `);
+  if (TAURI) {
+    api('/api/health').then((h) => {
+      const dev = h.device === 'cuda' ? 'כרטיס מסך' : h.device === 'cpu' ? 'מעבד' : 'המודל ייטען בתמלול הבא';
+      $('#stEngState') && ($('#stEngState').textContent = `פועל · גרסה ${h.version} · ${dev} · פורט ${ENGINE.port}`);
+    }).catch(() => { $('#stEngState') && ($('#stEngState').textContent = 'לא עונה'); });
+    $('#stEngLog').onclick = async () => {
+      const pre = $('#stEngLogText');
+      pre.textContent = await engineLogText();
+      pre.classList.remove('hidden');
+      pre.scrollTop = pre.scrollHeight;
+    };
+    $('#stEngRestart')?.addEventListener('click', restartEngine);
+  }
   $('#stKeyTest').onclick = async () => { if (await saveKeyAndTest($('#stKey').value)) { closeModal(); openSettings(); } };
   $('#stKeyDel')?.addEventListener('click', async () => {
     if (!confirm('להסיר את מפתח ה-API מהמחשב?')) return;
@@ -345,7 +432,9 @@ async function renderProjects() {
   const el = $('#projectList');
   if (!list.length) { el.innerHTML = '<div class="empty">עדיין אין פרויקטים. בחר קובץ ולחץ "התחל תמלול".</div>'; return; }
   el.innerHTML = list.map((p) => {
-    const st = p.job === 'running' ? '⏳ בעבודה…' : p.status === 'ready' ? `${p.segments} משפטים` : p.status === 'transcribing' ? '⚠ התמלול לא הסתיים' : '';
+    const st = p.job === 'running' ? '⏳ בעבודה…' : p.status === 'ready' ? `${p.segments} משפטים`
+      : p.status === 'error' ? '⚠ התמלול נכשל' : p.status === 'interrupted' ? '⚠ התמלול נקטע'
+      : p.status === 'cancelled' ? 'התמלול בוטל' : p.status === 'transcribing' ? '⚠ התמלול לא הסתיים' : '';
     return `<div class="proj" data-id="${p.id}">
       <div class="grow"><div class="name">${esc(p.name)}</div>
       <div class="meta">${fmt(p.duration, false)} · ${st} · ${new Date(p.updated * 1000).toLocaleDateString('he-IL')}</div></div>
@@ -389,25 +478,31 @@ function watchJob(pid, { title, onDone, hideable = false }) {
     if (hideable) { hidden = true; ov.classList.add('hidden'); return; }
     if (confirm('לבטל את הפעולה?')) await api(`/api/projects/${pid}/cancel`, { method: 'POST' });
   };
-  clearInterval(jobTimer);
+  // One request at a time: the next poll is scheduled only after the previous one returns, so a slow
+  // or stalled engine cannot pile up requests (that once ended in ERR_INSUFFICIENT_RESOURCES).
+  const mine = jobTimer = {};
   return new Promise((resolve) => {
-    jobTimer = setInterval(async () => {
-      let j;
-      try { j = await api(`/api/projects/${pid}/job`); } catch (_) { return; }
+    const poll = async () => {
+      if (jobTimer !== mine) return; // a newer watchJob took over
+      let j = null;
+      try { j = await api(`/api/projects/${pid}/job`); } catch (_) { /* engine busy or down */ }
+      if (jobTimer !== mine) return;
+      if (!j) { setTimeout(poll, 2000); return; }
       $('#jobBar').style.width = Math.round((j.progress || 0) * 100) + '%';
       $('#jobMsg').textContent = (j.message || '') + (j.progress ? `  (${Math.round(j.progress * 100)}%)` : '');
-      if (j.state !== 'running') {
-        clearInterval(jobTimer);
-        ov.classList.add('hidden');
-        if (j.state === 'error') toast(j.error || 'שגיאה', { error: true, timeout: 15000 });
-        else if (j.state === 'cancelled') toast('הפעולה בוטלה');
-        else if (j.state === 'idle') toast('הפעולה נקטעה (התוכנה נסגרה באמצע)', { error: true });
-        if (onDone) onDone(j, hidden);
-        resolve(j);
-      }
-    }, 900);
+      if (j.state === 'running') { setTimeout(poll, 900); return; }
+      jobTimer = null;
+      ov.classList.add('hidden');
+      if (j.state === 'error') toast(j.error || 'שגיאה', { error: true, timeout: 15000 });
+      else if (j.state === 'cancelled') toast('הפעולה בוטלה');
+      else if (j.state === 'idle') toast('הפעולה נקטעה (מנוע התמלול נסגר באמצע)', { error: true });
+      if (onDone) onDone(j, hidden);
+      resolve(j);
+    };
+    setTimeout(poll, 900);
   });
 }
+function stopWatchingJob() { jobTimer = null; }
 
 // ------------------------------------------------------------------ editor state
 let P = null;            // current project
@@ -539,8 +634,12 @@ async function openProject(pid) {
     return openProject(pid);
   }
   if (P.status !== 'ready') {
+    const why = job.state === 'error' ? 'אירעה שגיאה: ' + esc(job.error)
+      : P.status === 'error' ? 'אירעה שגיאה: ' + esc(P.error || '')
+      : P.status === 'cancelled' ? 'התמלול בוטל.'
+      : 'התמלול נקטע לפני שהסתיים, כנראה כי מנוע התמלול נסגר באמצע.';
     openModal(`<h2>התמלול לא הושלם</h2>
-      <p>${job.state === 'error' ? 'אירעה שגיאה: ' + esc(job.error) : 'התמלול הופסק לפני שהסתיים.'}</p>
+      <p>${why}</p>
       <div class="row"><button class="btn primary" id="retryBtn">תמלל שוב</button>
       <button class="btn ghost" id="homeBtn">חזרה</button></div>`);
     $('#retryBtn').onclick = async () => {

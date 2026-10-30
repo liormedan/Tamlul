@@ -174,11 +174,46 @@ def start_job(pid, kind, fn):
         except Exception as e:
             traceback.print_exc()
             job["state"] = "error"
-            job["error"] = str(e)
-            job["message"] = "שגיאה: " + str(e)
+            job["error"] = friendly_error(e)
+            job["message"] = "שגיאה: " + job["error"]
 
     threading.Thread(target=run, daemon=True).start()
     return job
+
+
+_MEMORY_ERRORS = ("out of memory", "mkl_malloc", "cublas_status", "cuda failed", "failed to allocate",
+                  "cudnn_status", "memoryerror")
+
+
+def friendly_error(e):
+    """Turn low-level GPU / memory failures into something a user can act on; keep the detail."""
+    s = f"{type(e).__name__}: {e}" if isinstance(e, MemoryError) else str(e)
+    if any(k in s.lower() for k in _MEMORY_ERRORS):
+        return ("לא היה מספיק זיכרון במחשב או בכרטיס המסך. סגור תוכנות כבדות ונסה שוב. "
+                f"(פרטים: {s[:160]})")
+    return s
+
+
+def effective_status(p):
+    """A project marked "transcribing" with no running job was cut off (engine closed or crashed)."""
+    st = p.get("status")
+    if st == "transcribing":
+        job = JOBS.get(p["id"])
+        if not job or job["state"] != "running":
+            return "interrupted"
+    return st
+
+
+def set_status(pid, status, error=None):
+    p = load_project(pid)
+    if p is None:
+        return
+    p["status"] = status
+    if error:
+        p["error"] = error
+    else:
+        p.pop("error", None)
+    save_project(p)
 
 
 def job_public(job):
@@ -234,10 +269,23 @@ def transcribe_job(pid):
         p["segments"] = segments
         p["cuts"] = []
         p["status"] = "ready"
+        p.pop("error", None)
         save_project(p)
         log(f"הסתיים: {len(segments)} משפטים")
         return {"segments": len(segments)}
-    return fn
+
+    def tracked(job, log):
+        # The outcome is saved in project.json, so it survives an engine restart (JOBS lives in memory).
+        set_status(pid, "transcribing")
+        try:
+            return fn(job, log)
+        except engine.Cancelled:
+            set_status(pid, "cancelled")
+            raise
+        except Exception as e:
+            set_status(pid, "error", friendly_error(e))
+            raise
+    return tracked
 
 
 # ---------------------------------------------------------------- API: settings & speakers
@@ -344,7 +392,8 @@ def api_projects():
         if p:
             job = JOBS.get(p["id"])
             out.append({"id": p["id"], "name": p["name"], "updated": p.get("updated", 0),
-                        "duration": p.get("duration", 0), "status": p.get("status"),
+                        "duration": p.get("duration", 0), "status": effective_status(p),
+                        "error": p.get("error"),
                         "segments": len(p.get("segments", [])),
                         "job": job_public(job)["state"] if job else "idle"})
     return sorted(out, key=lambda x: -x["updated"])
@@ -399,6 +448,7 @@ def api_project(pid: str):
     p = load_project(pid)
     if p is None:
         raise HTTPException(404)
+    p["status"] = effective_status(p)
     return p
 
 
