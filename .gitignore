@@ -11,6 +11,9 @@ models/
 data/
 exports/
 
+# Tauri / Node (src-tauri/.gitignore covers target/ and gen/schemas)
+node_modules/
+
 # Secrets
 .env
 

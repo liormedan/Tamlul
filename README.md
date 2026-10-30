@@ -78,6 +78,9 @@
 
 ## למפתחים (For developers)
 
+- `src-tauri/` – Tauri 2 shell (branch `tauri`, in progress). The UI in `app/static` is the Tauri frontend (served from `http://tauri.localhost`); on startup it launches `.venv\Scripts\python.exe app\server.py` (stdout/stderr → `data/engine.log`) unless port 8765 is already taken, and puts itself in a Windows job object so the engine dies with the window, also on a crash. The page waits for the engine (`waitForEngine` in `app.js`) and talks to it at `http://127.0.0.1:8765` (CORS allows the Tauri origin only). File dialogs via `tauri-plugin-dialog`, external links via `tauri-plugin-opener`.
+  - Build: `npm install`, then `cd src-tauri && cargo build` (first build ~8 min) → `src-tauri\target\debug\tamlul.exe`. Frontend files are embedded at build time, so rebuild after editing `app/static`.
+  - Inspect the page: set `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` before starting the exe.
 - `app/desktop.py` – desktop entry point: runs the server in a thread and opens it in a pywebview window (WebView2 / Edge engine, so H.264 and AAC play natively). Native file dialogs via `server.PICK_HOOK`; closing the window stops the server. `start.bat` launches it with `pythonw`, output goes to `data/desktop.log`. `TAMLUL_DEBUG=1` opens devtools.
 - `app/server.py` – FastAPI server on `127.0.0.1:8765`, background jobs, file picker (tkinter fallback when run without the desktop window), ranged media streaming. `python app\server.py` still works on its own and opens the browser.
 - `app/engine.py` – faster-whisper with `ivrit-ai/whisper-large-v3-turbo-ct2` (CUDA float16, CPU int8 fallback), hotwords for vocabulary, SpeechBrain ECAPA voice prints for speaker clustering and enrollment (`data/speakers.json`), correction dictionary (keeps Hebrew prefixes ו/ה/ב/ל/מ/ש/כ).

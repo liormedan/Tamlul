@@ -18,7 +18,9 @@ APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_DIR))
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse, Response,  # noqa: E402
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 import ai  # noqa: E402
@@ -47,6 +49,13 @@ DEFAULT_SETTINGS = {
 }
 
 app = FastAPI()
+# חלון הטאורי מגיש את הממשק מ-tauri.localhost וקורא לשרת הזה ישירות
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 _file_lock = threading.Lock()
 
 
@@ -763,8 +772,8 @@ app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(APP_DIR / "static" / "index.html",
-                        headers={"Cache-Control": "no-store"})
+    # index.html uses relative asset paths (the same file is the Tauri frontend)
+    return RedirectResponse("/static/index.html")
 
 
 @app.exception_handler(HTTPException)

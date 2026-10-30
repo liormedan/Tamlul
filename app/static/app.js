@@ -10,6 +10,64 @@ const CUT_COLOR = 'rgba(214, 69, 69, 0.30)';
 const DELETED_COLOR = 'rgba(120, 120, 120, 0.22)';
 const KIND_LABEL = { silence: 'שקט', filler: 'מילוי', manual: 'חיתוך' };
 
+// ------------------------------------------------------------------ desktop / engine
+// בחלון טאורי הממשק מוגש מ-tauri.localhost והמנוע (server.py) רץ בנפרד על 127.0.0.1.
+// בדפדפן רגיל השרת מגיש גם את הממשק, אז הכתובות יחסיות.
+const TAURI = window.__TAURI__ || null;
+const API = TAURI ? 'http://127.0.0.1:8765' : '';
+
+const MEDIA_EXT = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4a', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'wma'];
+const AUDIO_EXT = ['m4a', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'wma', 'mp4'];
+
+async function pickFiles({ multiple = false, kind = 'media' } = {}) {
+  if (!TAURI) return (await api('/api/pick', { method: 'POST', body: { multiple, kind } })).files;
+  const res = await TAURI.dialog.open({
+    multiple,
+    filters: [
+      kind === 'audio' ? { name: 'קבצי אודיו', extensions: AUDIO_EXT } : { name: 'קבצי וידאו ואודיו', extensions: MEDIA_EXT },
+      { name: 'כל הקבצים', extensions: ['*'] },
+    ],
+  });
+  if (!res) return [];
+  return Array.isArray(res) ? res : [res];
+}
+
+function openExternal(url) {
+  if (TAURI) TAURI.opener.openUrl(url);
+  else window.open(url, '_blank', 'noopener');
+}
+
+// The engine loads torch and the models' code at startup; wait for it before the first call.
+async function waitForEngine(timeoutMs = 90000) {
+  const t0 = Date.now();
+  let shown = false;
+  for (;;) {
+    try {
+      const r = await fetch(API + '/api/settings', { cache: 'no-store' });
+      if (r.ok) break;
+    } catch (_) { /* not up yet */ }
+    if (!shown && Date.now() - t0 > 400) {
+      $('#jobTitle').textContent = 'טוען את מנוע התמלול…';
+      $('#jobMsg').textContent = 'בפעם הראשונה אחרי הדלקת המחשב זה יכול לקחת עד דקה.';
+      $('#jobBar').parentElement.classList.add('hidden');
+      $('#jobCancel').classList.add('hidden');
+      $('#jobOverlay').classList.remove('hidden');
+      shown = true;
+    }
+    if (Date.now() - t0 > timeoutMs) {
+      $('#jobTitle').textContent = 'המנוע לא עלה';
+      $('#jobMsg').textContent = 'הפרטים בקובץ data\\engine.log בתיקיית התוכנה. אם חסרה התקנה – להריץ install.bat.';
+      throw new Error('engine did not start');
+    }
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  if (shown) {
+    $('#jobOverlay').classList.add('hidden');
+    $('#jobBar').parentElement.classList.remove('hidden');
+    $('#jobCancel').classList.remove('hidden');
+  }
+}
+
 // ------------------------------------------------------------------ helpers
 async function api(path, opts = {}) {
   const o = { ...opts };
@@ -17,7 +75,7 @@ async function api(path, opts = {}) {
     o.body = JSON.stringify(o.body);
     o.headers = { 'Content-Type': 'application/json' };
   }
-  const r = await fetch(path, o);
+  const r = await fetch(API + path, o);
   let data = null;
   try { data = await r.json(); } catch (_) { /* empty */ }
   if (!r.ok) throw new Error((data && (data.error || data.detail)) || `שגיאה ${r.status}`);
@@ -221,7 +279,7 @@ function renderNewProject() {
 }
 
 $('#pickVideo').onclick = async () => {
-  const { files } = await api('/api/pick', { method: 'POST', body: { multiple: false } });
+  const files = await pickFiles({ multiple: false });
   if (files.length) {
     NP.video = files[0];
     if (!$('#npName').value) $('#npName').value = files[0].split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
@@ -230,7 +288,7 @@ $('#pickVideo').onclick = async () => {
 };
 $('#clearVideo').onclick = () => { NP.video = ''; renderNewProject(); };
 $('#addTracks').onclick = async () => {
-  const { files } = await api('/api/pick', { method: 'POST', body: { multiple: true, kind: 'audio' } });
+  const files = await pickFiles({ multiple: true, kind: 'audio' });
   for (const f of files) NP.tracks.push({ path: f, speaker: guessSpeaker(f) });
   renderNewProject();
 };
@@ -490,7 +548,7 @@ function teardownEditor() {
 
 async function buildEditor() {
   const base = `/api/projects/${P.id}`;
-  video.src = `${base}/media/main`;
+  video.src = `${API}${base}/media/main`;
   $('#audioOnly').classList.toggle('hidden', !!P.main.has_video);
   video.onerror = () => toast('הדפדפן לא מצליח לנגן את הקובץ הזה. נסה להמיר אותו ל-MP4.', { error: true, timeout: 12000 });
 
@@ -1384,7 +1442,7 @@ function aiModelLabel() {
 }
 function openConsole(which) {
   if (!AI) return;
-  window.open(which === 'billing' ? AI.billing_url : AI.keys_url, '_blank', 'noopener');
+  openExternal(which === 'billing' ? AI.billing_url : AI.keys_url);
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-url]');
@@ -1540,7 +1598,7 @@ async function aiAsk({ preset = null, question = null, label }) {
     if (nearBottom) box.scrollTop = box.scrollHeight;
   };
   try {
-    const r = await fetch(`/api/projects/${P.id}/ai`, {
+    const r = await fetch(`${API}/api/projects/${P.id}/ai`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ preset, question, label, edited }), signal: aiCtrl.signal,
     });
@@ -1646,6 +1704,7 @@ $('#aiKeySave').onclick = async () => {
 // ------------------------------------------------------------------ start
 (async function init() {
   renderNewProject();
+  try { await waitForEngine(); } catch (_) { return; }
   try { await loadSettings(); } catch (e) { toast('לא מצליח להתחבר לתוכנה: ' + e.message, { error: true }); }
   window.ENROLLED = await api('/api/speakers').catch(() => []);
   await loadAI();
