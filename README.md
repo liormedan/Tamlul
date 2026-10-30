@@ -14,8 +14,10 @@
 
 ## הפעלה
 
-לחיצה כפולה על **Tamlul** בשולחן העבודה. נפתח חלון שחור (לא לסגור אותו בזמן העבודה) והתוכנה נפתחת בדפדפן.
-לסיום עבודה – סוגרים את החלון השחור.
+לחיצה כפולה על **Tamlul** בשולחן העבודה. התוכנה נפתחת בחלון משלה.
+לסיום עבודה – סוגרים את החלון.
+
+אם החלון לא נפתח, ההודעה המלאה נמצאת בקובץ `data\desktop.log` – לשלוח אותו ל־Claude.
 
 ## עבודה
 
@@ -76,7 +78,8 @@
 
 ## למפתחים (For developers)
 
-- `app/server.py` – FastAPI server on `127.0.0.1:8765`, background jobs, file picker (tkinter), ranged media streaming.
+- `app/desktop.py` – desktop entry point: runs the server in a thread and opens it in a pywebview window (WebView2 / Edge engine, so H.264 and AAC play natively). Native file dialogs via `server.PICK_HOOK`; closing the window stops the server. `start.bat` launches it with `pythonw`, output goes to `data/desktop.log`. `TAMLUL_DEBUG=1` opens devtools.
+- `app/server.py` – FastAPI server on `127.0.0.1:8765`, background jobs, file picker (tkinter fallback when run without the desktop window), ranged media streaming. `python app\server.py` still works on its own and opens the browser.
 - `app/engine.py` – faster-whisper with `ivrit-ai/whisper-large-v3-turbo-ct2` (CUDA float16, CPU int8 fallback), hotwords for vocabulary, SpeechBrain ECAPA voice prints for speaker clustering and enrollment (`data/speakers.json`), correction dictionary (keeps Hebrew prefixes ו/ה/ב/ל/מ/ש/כ).
 - `app/media.py` – ffmpeg (imageio-ffmpeg) for waveform peaks, decoding, silence/filler suggestions, and cut export via `select/aselect` with `fps` normalisation; tries `h264_nvenc`, falls back to `libx264`.
 - `app/exporters.py` – SRT / DOCX (RTL) / TXT.

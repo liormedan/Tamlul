@@ -6,7 +6,8 @@ __pycache__/
 # Downloaded models (install.bat / app/setup_models.py fetch them)
 models/
 
-# User data: projects, speaker voice prints, settings, API key (data/ai.json)
+# User data: projects, speaker voice prints, settings, API key (data/ai.json),
+# desktop.log and the WebView2 profile (data/webview)
 data/
 exports/
 
