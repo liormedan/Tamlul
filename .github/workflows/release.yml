@@ -14,6 +14,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch pinned uv runtime resource
+        shell: pwsh
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'src-tauri/fetch-uv.ps1')
+          if (-not (Test-Path -LiteralPath 'src-tauri/bin/uv.exe')) { throw 'Pinned uv resource is missing.' }
       - uses: actions/setup-node@v4
         with:
           node-version: 20

@@ -17,7 +17,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
-          cache: false
       - name: Check versions
         run: node tools/set-version.mjs --check
       - name: Compile Python
@@ -25,6 +24,11 @@ jobs:
       - name: Check JavaScript syntax
         shell: pwsh
         run: Get-ChildItem app/static -Filter *.js -File | Where-Object { $_.Directory.Name -ne 'vendor' } | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+      - name: Fetch pinned uv runtime resource
+        shell: pwsh
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'src-tauri/fetch-uv.ps1')
+          if (-not (Test-Path -LiteralPath 'src-tauri/bin/uv.exe')) { throw 'Pinned uv resource is missing.' }
       - name: Check Rust
         working-directory: src-tauri
         run: cargo check
