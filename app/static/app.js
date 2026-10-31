@@ -197,6 +197,7 @@ function parseTime(str) {
   return parts.reduce((acc, v) => acc * 60 + v, 0);
 }
 function uid() { return Math.random().toString(16).slice(2, 12); }
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
@@ -262,6 +263,13 @@ async function openSettings() {
   const corr = Object.entries(s.corrections || {});
   const body = openModal(`
     <h2>הגדרות</h2>
+    <h3>מראה</h3>
+    <div class="row"><label>ערכת צבעים</label>
+      <select id="stTheme">
+        <option value="dark" ${tamlulTheme() === 'dark' ? 'selected' : ''}>כהה</option>
+        <option value="light" ${tamlulTheme() === 'light' ? 'selected' : ''}>בהיר</option>
+      </select></div>
+
     <h3>מילים מיוחדות</h3>
     <p class="hint">שמות, מונחים ומילים לועזיות שהתוכנה צריכה לזהות. מילה בכל שורה.</p>
     <textarea id="stVocab" placeholder="Meida4U&#10;זום&#10;פודקאסט">${esc((s.vocabulary || []).join('\n'))}</textarea>
@@ -349,6 +357,7 @@ async function openSettings() {
   });
   $('#stModel').onchange = async (e) => { AI = await api('/api/ai', { method: 'POST', body: { model: e.target.value } }); toast('המודל עודכן'); };
   $('#stSpentReset').onclick = async () => { AI = await api('/api/ai', { method: 'POST', body: { reset_spent: true } }); closeModal(); openSettings(); };
+  $('#stTheme').onchange = (e) => { tamlulSetTheme(e.target.value); recolorWaves(); };
   $('#stThr').oninput = (e) => { $('#stThrV').textContent = e.target.value; };
   $('#addCorr').onclick = () => $('#corrTable').insertAdjacentHTML('beforeend', corrRow('', ''));
   $('#corrTable').onclick = (e) => { if (e.target.dataset.delCorr !== undefined) e.target.closest('tr').remove(); };
@@ -517,6 +526,11 @@ function stopWatchingJob() { jobTimer = null; }
 let P = null;            // current project
 let wsMain = null, regMain = null;
 let lanes = [];          // [{ws, reg, track}]
+// after a theme switch: the waveforms are drawn on canvas, so they take colors from the CSS variables by hand
+function recolorWaves() {
+  if (wsMain) wsMain.setOptions({ waveColor: cssVar('--wave'), progressColor: cssVar('--wave-progress'), cursorColor: cssVar('--wave-progress') });
+  lanes.forEach((l) => l.ws.setOptions({ waveColor: cssVar('--wave-lane'), progressColor: cssVar('--wave-lane') }));
+}
 let removed = [];        // merged removed intervals
 let stopAt = null;
 let cutMode = false, unsubDrag = null, addingRegions = false;
@@ -708,9 +722,9 @@ async function buildEditor() {
   wsMain = WaveSurfer.create({
     container: '#wave-main', media: video, height: 76, audioRate: currentSpeed(),
     peaks: [mainPeaks.peaks], duration,
-    waveColor: '#9aa6b2', progressColor: '#0f6e6a', cursorColor: '#0f6e6a', cursorWidth: 2,
+    waveColor: cssVar('--wave'), progressColor: cssVar('--wave-progress'), cursorColor: cssVar('--wave-progress'), cursorWidth: 2,
     minPxPerSec: zoom, autoScroll: true, autoCenter: false, dragToSeek: true,
-    plugins: [regMain, WaveSurfer.Timeline.create({ height: 16, style: { fontSize: '11px', color: '#66707c' } })],
+    plugins: [regMain, WaveSurfer.Timeline.create({ height: 16, style: { fontSize: '11px', color: cssVar('--muted') } })],
   });
 
   // lanes for speech segments: one per separate track, or one lane for the main audio
@@ -728,7 +742,7 @@ async function buildEditor() {
     const ws = WaveSurfer.create({
       container: $('.wave', wrap), backend: 'WebAudio', height: def.track === null ? 70 : 58,
       peaks: [peaks], duration,
-      waveColor: '#8f9ba7', progressColor: '#8f9ba7', cursorWidth: 0,
+      waveColor: cssVar('--wave-lane'), progressColor: cssVar('--wave-lane'), cursorWidth: 0,
       minPxPerSec: zoom, autoScroll: false, hideScrollbar: true, plugins: [reg],
     });
     const lane = { ws, reg, track: def.track };
