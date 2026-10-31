@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.liormedan.tamlul",
   "build": {
-    "frontendDist": "../app/static"
+    "frontendDist": "../app/static",
+    "beforeBundleCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File src-tauri/fetch-uv.ps1"
   },
   "app": {
     "withGlobalTauri": true,
@@ -37,13 +38,49 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Lior Medan",
+    "shortDescription": "תמלול בעברית",
+    "longDescription": "Hebrew transcription that runs on your own computer",
+    "resources": {
+      "../app/server.py": "app/server.py",
+      "../app/engine.py": "app/engine.py",
+      "../app/media.py": "app/media.py",
+      "../app/exporters.py": "app/exporters.py",
+      "../app/ai.py": "app/ai.py",
+      "../app/setup_models.py": "app/setup_models.py",
+      "../app/static/index.html": "app/static/index.html",
+      "../app/static/app.js": "app/static/app.js",
+      "../app/static/style.css": "app/static/style.css",
+      "../app/static/setup.html": "app/static/setup.html",
+      "../app/static/setup.js": "app/static/setup.js",
+      "../app/static/vendor/": "app/static/vendor/",
+      "../requirements.txt": "requirements.txt",
+      "../.env.example": ".env.example",
+      "bin/uv.exe": "uv.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Hebrew",
+          "English"
+        ],
+        "customLanguageFiles": {
+          "Hebrew": "nsis/Hebrew.nsh"
+        },
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   }
 }

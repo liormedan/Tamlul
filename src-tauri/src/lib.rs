@@ -14,9 +14,16 @@
 //! second launch brings the existing window to the front.
 //!
 //! User data: a release build keeps projects, settings and engine.log in
-//! %LOCALAPPDATA%\Tamlul (passed to the engine as TAMLUL_DATA), so updating or
-//! removing the program never touches them. A debug build keeps the repo's
-//! data folder. Setting TAMLUL_DATA overrides both.
+//! %LOCALAPPDATA%\<identifier> (passed to the engine as TAMLUL_DATA), apart
+//! from the program, which the per-user installer puts in %LOCALAPPDATA%\Tamlul.
+//! Updating never touches it; the uninstaller removes it only when the user
+//! ticks "delete app data". A debug build keeps the repo's data folder.
+//! Setting TAMLUL_DATA overrides both.
+//!
+//! Python runtime: next to the code when a .venv is there (development, or an
+//! install.bat setup). Otherwise in <data>\runtime, built on the first launch
+//! by the setup wizard (setup.rs, setup.html); until it is ready the engine is
+//! not started and engine_info says `setup_needed`.
 //!
 //! Development: set TAMLUL_PORT (and TAMLUL_TOKEN if that engine has one)
 //! before starting the exe to attach to an engine you started yourself.
@@ -27,6 +34,8 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+
+mod setup;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -43,6 +52,8 @@ struct EngineInfo {
     generation: u64,
     /// True when the shell attached to an engine started by hand (TAMLUL_PORT).
     attached: bool,
+    /// The Python runtime is not built yet; the window shows setup.html instead.
+    setup_needed: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -56,6 +67,9 @@ struct EngineState {
     child: Option<Child>,
     root: Option<PathBuf>,
     data: Option<DataDir>,
+    /// Managed runtime folder (venv, models). None: the code folder's own .venv.
+    runtime: Option<PathBuf>,
+    setup_running: bool,
 }
 
 /// Where user data and engine.log go.
@@ -68,33 +82,66 @@ struct DataDir {
 }
 
 /// TAMLUL_DATA wins. Otherwise a release build keeps user data in
-/// %LOCALAPPDATA%\Tamlul, apart from the program, and a debug build keeps the
-/// repo's data folder so development data stays where it was.
-fn data_dir(root: Option<&Path>) -> Option<DataDir> {
+/// %LOCALAPPDATA%\<identifier> (the folder the uninstaller offers to delete),
+/// and a debug build keeps the repo's data folder so development data stays
+/// where it was.
+fn data_dir(root: Option<&Path>, identifier: &str) -> Option<DataDir> {
     if let Some(d) = std::env::var_os("TAMLUL_DATA").filter(|d| !d.is_empty()) {
         return Some(DataDir { path: PathBuf::from(d), pass_to_engine: true });
     }
     if !cfg!(debug_assertions) {
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            return Some(DataDir { path: PathBuf::from(local).join("Tamlul"), pass_to_engine: true });
+            return Some(DataDir { path: PathBuf::from(local).join(identifier), pass_to_engine: true });
         }
     }
     root.map(|r| DataDir { path: r.join("data"), pass_to_engine: false })
+}
+
+/// TAMLUL_RUNTIME wins. A .venv next to the code means a development or
+/// install.bat layout: use it as it is. Otherwise <data>\runtime.
+fn runtime_dir(root: Option<&Path>, data: Option<&DataDir>) -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("TAMLUL_RUNTIME").filter(|d| !d.is_empty()) {
+        return Some(PathBuf::from(d));
+    }
+    if root.is_some_and(|r| r.join(".venv").join("Scripts").join("python.exe").is_file()) {
+        return None;
+    }
+    data.map(|d| d.path.join("runtime"))
+}
+
+fn python_path(root: &Path, runtime: Option<&Path>) -> PathBuf {
+    match runtime {
+        Some(r) => setup::venv_python(r),
+        None => root.join(".venv").join("Scripts").join("python.exe"),
+    }
 }
 
 struct Engine(Mutex<EngineState>);
 
 impl Engine {
     fn new() -> Self {
-        let root = project_root();
-        let data = data_dir(root.as_deref());
         Engine(Mutex::new(EngineState {
-            info: EngineInfo { port: 0, token: String::new(), error: None, generation: 0, attached: false },
+            info: EngineInfo { port: 0, token: String::new(), error: None, generation: 0, attached: false, setup_needed: false },
             child: None,
-            root,
-            data,
+            root: None,
+            data: None,
+            runtime: None,
+            setup_running: false,
         }))
     }
+
+    /// Find the code, data and runtime folders. Needs the app's identifier, so it runs in setup().
+    fn configure(&self, identifier: &str) {
+        let mut st = self.0.lock().unwrap();
+        st.root = project_root();
+        st.data = data_dir(st.root.as_deref(), identifier);
+        st.runtime = runtime_dir(st.root.as_deref(), st.data.as_ref());
+        log::info!("root {:?}, data {:?}, runtime {:?}", st.root, st.data.as_ref().map(|d| &d.path), st.runtime);
+    }
+}
+
+fn needs_setup(st: &EngineState) -> bool {
+    st.runtime.as_deref().is_some_and(|r| !setup::is_ready(r))
 }
 
 #[tauri::command]
@@ -109,6 +156,9 @@ async fn restart_engine(engine: tauri::State<'_, Engine>) -> Result<EngineInfo, 
         let mut st = engine.0.lock().unwrap();
         if st.info.attached {
             return Err("המנוע הופעל ידנית (TAMLUL_PORT). צריך להפעיל אותו מחדש מבחוץ.".into());
+        }
+        if needs_setup(&st) {
+            return Err("ההתקנה עוד לא הסתיימה.".into());
         }
         // Taking the child out first keeps the watcher from reporting this exit as a crash.
         st.child.take()
@@ -125,8 +175,12 @@ async fn restart_engine(engine: tauri::State<'_, Engine>) -> Result<EngineInfo, 
 #[tauri::command]
 fn engine_log(engine: tauri::State<'_, Engine>, lines: Option<usize>) -> Result<String, String> {
     let data = engine.0.lock().unwrap().data.clone().ok_or("app/server.py not found")?;
-    let path = data.path.join("engine.log");
-    let mut f = File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    tail(&data.path.join("engine.log"), lines.unwrap_or(200))
+}
+
+/// The last `lines` lines of a text file, read from its last 256KB.
+fn tail(path: &Path, lines: usize) -> Result<String, String> {
+    let mut f = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
     let start = len.saturating_sub(256 * 1024);
     f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
@@ -134,8 +188,72 @@ fn engine_log(engine: tauri::State<'_, Engine>, lines: Option<usize>) -> Result<
     f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&buf);
     let all: Vec<&str> = text.lines().collect();
-    let n = lines.unwrap_or(200).min(all.len());
+    let n = lines.min(all.len());
     Ok(all[all.len() - n..].join("\n"))
+}
+
+#[derive(Serialize)]
+struct SetupInfo {
+    needed: bool,
+    running: bool,
+    runtime: Option<PathBuf>,
+    free_bytes: Option<u64>,
+    need_bytes: u64,
+    steps: Vec<&'static str>,
+}
+
+#[tauri::command]
+fn setup_info(engine: tauri::State<'_, Engine>) -> SetupInfo {
+    let st = engine.0.lock().unwrap();
+    SetupInfo {
+        needed: needs_setup(&st),
+        running: st.setup_running,
+        free_bytes: st.runtime.as_deref().and_then(setup::free_bytes),
+        runtime: st.runtime.clone(),
+        need_bytes: setup::NEED_BYTES,
+        steps: setup::STEPS.to_vec(),
+    }
+}
+
+/// Start building the runtime in the background. Progress arrives as `setup-progress` events.
+#[tauri::command]
+fn start_setup(app: tauri::AppHandle, engine: tauri::State<'_, Engine>) -> Result<(), String> {
+    let (root, runtime) = {
+        let mut st = engine.0.lock().unwrap();
+        if st.setup_running {
+            return Ok(());
+        }
+        let root = st.root.clone().ok_or("app/server.py not found")?;
+        let runtime = st.runtime.clone().ok_or("nothing to set up: the program uses its own .venv")?;
+        st.setup_running = true;
+        (root, runtime)
+    };
+    std::thread::spawn(move || {
+        let outcome = setup::run(&app, &root, &runtime);
+        app.state::<Engine>().0.lock().unwrap().setup_running = false;
+        setup::report(&app, outcome);
+    });
+    Ok(())
+}
+
+/// After a finished setup: start the engine and return what the window needs to reach it.
+#[tauri::command]
+fn finish_setup(engine: tauri::State<'_, Engine>) -> Result<EngineInfo, String> {
+    let mut st = engine.0.lock().unwrap();
+    if needs_setup(&st) {
+        return Err("ההתקנה עוד לא הסתיימה.".into());
+    }
+    st.info.setup_needed = false;
+    if st.child.is_none() && !st.info.attached {
+        launch(&mut st);
+    }
+    Ok(st.info.clone())
+}
+
+#[tauri::command]
+fn setup_log(engine: tauri::State<'_, Engine>, lines: Option<usize>) -> Result<String, String> {
+    let runtime = engine.0.lock().unwrap().runtime.clone().ok_or("no runtime folder")?;
+    tail(&runtime.join(setup::LOG_FILE), lines.unwrap_or(200))
 }
 
 fn random_token() -> String {
@@ -152,23 +270,31 @@ fn free_port() -> Result<u16, String> {
 }
 
 /// Folder that holds app/server.py: next to the exe (installed layout) or,
-/// in development, the repo root above src-tauri.
+/// in development, the repo root above src-tauri. The build also copies the
+/// bundled resources next to the exe in target\, so a debug build looks at
+/// the repo first, while a release build behaves like an installed copy.
 fn project_root() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("TAMLUL_HOME") {
         return Some(PathBuf::from(dir));
     }
     let exe = std::env::current_exe().ok()?;
     let dev_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().map(Path::to_path_buf);
-    exe.ancestors()
-        .map(Path::to_path_buf)
-        .chain(dev_root)
-        .find(|d| d.join("app").join("server.py").is_file())
+    let has_server = |d: &PathBuf| d.join("app").join("server.py").is_file();
+    if cfg!(debug_assertions) {
+        if let Some(d) = dev_root.clone().filter(has_server) {
+            return Some(d);
+        }
+    }
+    exe.ancestors().map(Path::to_path_buf).chain(dev_root).find(has_server)
 }
 
-fn spawn_engine(root: &Path, data: &DataDir, port: u16, token: &str) -> Result<Child, String> {
-    let python = root.join(".venv").join("Scripts").join("python.exe");
+fn spawn_engine(root: &Path, data: &DataDir, runtime: Option<&Path>, port: u16, token: &str) -> Result<Child, String> {
+    let python = python_path(root, runtime);
     if !python.is_file() {
-        return Err(format!("{} not found - run install.bat first", python.display()));
+        return Err(match runtime {
+            Some(_) => format!("סביבת הפייתון חסרה ({}). סגור את התוכנה ופתח אותה שוב כדי להתקין אותה מחדש.", python.display()),
+            None => format!("{} not found - run install.bat first", python.display()),
+        });
     }
     fs::create_dir_all(&data.path).map_err(|e| format!("{}: {e}", data.path.display()))?;
     let log_file = OpenOptions::new()
@@ -194,6 +320,10 @@ fn spawn_engine(root: &Path, data: &DataDir, port: u16, token: &str) -> Result<C
     } else {
         cmd.env_remove("TAMLUL_DATA");
     }
+    match runtime {
+        Some(r) => cmd.env("TAMLUL_MODELS", r.join("models")),
+        None => cmd.env_remove("TAMLUL_MODELS"),
+    };
     no_window(&mut cmd);
     cmd.spawn().map_err(|e| format!("failed to start {}: {e}", python.display()))
 }
@@ -205,9 +335,10 @@ fn launch(st: &mut EngineState) {
         st.info.token = random_token();
     }
     let paths = st.root.clone().zip(st.data.clone()).ok_or_else(|| "app/server.py not found".to_string());
+    let runtime = st.runtime.clone();
     let result = paths.and_then(|(root, data)| {
         let port = free_port()?;
-        spawn_engine(&root, &data, port, &st.info.token).map(|child| (port, child))
+        spawn_engine(&root, &data, runtime.as_deref(), port, &st.info.token).map(|child| (port, child))
     });
     match result {
         Ok((port, child)) => {
@@ -235,7 +366,13 @@ fn start(engine: &Engine) {
             error: None,
             generation: 1,
             attached: true,
+            setup_needed: false,
         };
+        return;
+    }
+    if needs_setup(&st) {
+        log::info!("the Python runtime is not set up yet; waiting for the setup wizard");
+        st.info.setup_needed = true;
         return;
     }
     launch(&mut st);
@@ -280,7 +417,7 @@ fn kill_tree(mut child: Child) {
     let _ = child.wait();
 }
 
-fn no_window(cmd: &mut Command) {
+pub(crate) fn no_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -353,11 +490,21 @@ pub fn run() {
             // window are handled by the event loop, which starts after setup, so engine_info
             // always sees a started engine.
             kill_children_on_exit();
-            start(&app.state::<Engine>());
+            let engine = app.state::<Engine>();
+            engine.configure(&app.config().identifier);
+            start(&engine);
             watch(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![engine_info, restart_engine, engine_log])
+        .invoke_handler(tauri::generate_handler![
+            engine_info,
+            restart_engine,
+            engine_log,
+            setup_info,
+            start_setup,
+            finish_setup,
+            setup_log
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

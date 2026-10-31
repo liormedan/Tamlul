@@ -14,11 +14,22 @@ import numpy as np
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = APP_DIR.parent
-MODELS_DIR = ROOT_DIR / "models"
-MODELS_DIR.mkdir(exist_ok=True)
+# The installed app keeps its models apart from the code (TAMLUL_MODELS, set by the Tauri shell).
+MODELS_DIR = Path(os.environ["TAMLUL_MODELS"]) if os.environ.get("TAMLUL_MODELS") else ROOT_DIR / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 os.environ.setdefault("HF_HOME", str(MODELS_DIR / "hf"))
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+
+if os.name == "nt":
+    # The Hugging Face cache links snapshot files to blobs with symlinks. On Windows that needs a
+    # privilege most users lack, and on some machines its own test passes while the real link then
+    # fails (WinError 1314 under %LOCALAPPDATA%). Store real files instead; nothing is duplicated.
+    try:
+        import huggingface_hub.file_download as _hf_download
+        _hf_download.are_symlinks_supported = lambda *args, **kwargs: False
+    except Exception:  # noqa: BLE001 - only an optimisation of how files are stored
+        pass
 
 WHISPER_MODEL = "ivrit-ai/whisper-large-v3-turbo-ct2"
 SPEAKER_MODEL = "speechbrain/spkrec-ecapa-voxceleb"

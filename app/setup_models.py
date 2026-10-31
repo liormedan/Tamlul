@@ -1,4 +1,9 @@
-"""Downloads the models once and checks that the NVIDIA card works. Run by install.bat."""
+"""Downloads the models once and checks that the NVIDIA card works.
+
+Run by install.bat and by the setup wizard of the Tauri app, which reads the
+last line (TAMLUL_RESULT ...) to show where transcription will run.
+"""
+import json
 import sys
 from pathlib import Path
 
@@ -31,3 +36,5 @@ except Exception as e:
     print("      Transcription still works; speakers will not be separated automatically.")
 
 print("\nAll set.")
+result = {"device": engine._whisper_device, "gpu": info["name"] if info["cuda"] else None}
+print("TAMLUL_RESULT " + json.dumps(result), flush=True)

@@ -1849,6 +1849,8 @@ $('#aiKeySave').onclick = async () => {
 (async function init() {
   renderNewProject();
   try { await connectEngine(); } catch (e) { ENGINE_ERROR = 'engine_info: ' + e; }
+  // First launch of an installed copy: the Python runtime is built by the setup wizard first.
+  if (ENGINE && ENGINE.setup_needed) { location.replace('setup.html'); return; }
   try { await waitForEngine(); } catch (_) { return; }
   try { await loadSettings(); } catch (e) { toast('לא מצליח להתחבר לתוכנה: ' + e.message, { error: true }); }
   window.ENROLLED = await api('/api/speakers').catch(() => []);

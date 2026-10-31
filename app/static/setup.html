@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>תמלול בעברית – התקנה</title>
+<link rel="stylesheet" href="style.css?v=9">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">ת</span> תמלול בעברית</div>
+</header>
+
+<main class="setup-main">
+  <div class="card">
+    <h2>התקנה ראשונה</h2>
+    <p>לפני העבודה הראשונה התוכנה מורידה פעם אחת את מנוע התמלול: Python, ספריית PyTorch לכרטיס המסך ומודל הדיבור בעברית.</p>
+    <p class="hint">זה בערך 5GB, ולוקח בין 10 ל־40 דקות לפי מהירות האינטרנט. אפשר להמשיך לעבוד במחשב בינתיים. אם סוגרים את החלון באמצע, ההתקנה ממשיכה מאותה נקודה בפעם הבאה.</p>
+
+    <div class="setup-facts">
+      <div><span>מקום פנוי בכונן</span><b id="suFree">…</b></div>
+      <div><span>תיקיית ההתקנה</span><code id="suPath" dir="ltr">…</code></div>
+    </div>
+    <p class="setup-warn hidden" id="suSpace"></p>
+
+    <ol class="setup-steps" id="suSteps"></ol>
+
+    <div class="setup-bar hidden" id="suBarWrap"><div id="suBar"></div></div>
+    <p class="setup-line" id="suLine" dir="ltr"></p>
+
+    <div class="setup-error hidden" id="suError">
+      <b>ההתקנה נעצרה.</b>
+      <p id="suErrorMsg"></p>
+      <pre class="setup-detail hidden" id="suErrorDetail" dir="ltr"></pre>
+      <p class="hint">בדרך כלל זו בעיה בחיבור לאינטרנט. "נסה שוב" ממשיך מהשלב שנכשל, ומה שכבר ירד לא יורד שוב.</p>
+    </div>
+
+    <div class="setup-done hidden" id="suDone">
+      <b>הכול מוכן.</b>
+      <p id="suDevice"></p>
+    </div>
+
+    <div class="row setup-actions">
+      <button class="btn primary big" id="suStart">התחל התקנה</button>
+      <button class="btn primary big hidden" id="suOpen">פתח את התוכנה</button>
+      <span class="spacer"></span>
+      <span class="hint" id="suElapsed"></span>
+      <button class="btn ghost" id="suLogBtn">הצג פרטים</button>
+    </div>
+    <pre class="engine-log hidden" id="suLog" dir="ltr"></pre>
+  </div>
+</main>
+
+<script src="setup.js?v=2"></script>
+</body>
+</html>
