@@ -1,85 +1,85 @@
-# תמלול בעברית
+# Tamlul: Hebrew transcription
 
-תוכנה שרצה על המחשב שלך (Windows + כרטיס NVIDIA) ומתמללת וידאו והקלטות בעברית:
-זיהוי דוברים, מילים מיוחדות, מילון תיקונים, עריכת זמנים על גל הסאונד, וחיתוך הפסקות וקטעים שגויים.
-שום קובץ לא נשלח לאינטרנט – הכל נשאר במחשב.
+Software that runs on your computer (Windows + an NVIDIA card) and transcribes Hebrew video and recordings:
+speaker identification, special words, a corrections dictionary, timing editing on the waveform, and cutting pauses and bad takes.
+No file is sent to the internet – everything stays on the computer.
 
-## התקנה (פעם אחת)
+## Installation (one time)
 
-1. לחיצה כפולה על **Tamlul_0.1.0_x64-setup.exe**. לא צריך הרשאות מנהל.
-2. פותחים את **Tamlul** מתפריט התחל או משולחן העבודה.
-3. בפתיחה הראשונה נפתח חלון "התקנה ראשונה": לוחצים **התחל התקנה**. התוכנה מורידה את מנוע התמלול (בערך 5GB, בין 10 ל־40 דקות) ומראה את ההתקדמות. בסוף היא בודקת את כרטיס המסך ואומרת אם התמלול ירוץ עליו.
+1. Double-click **Tamlul_0.1.0_x64-setup.exe**. No administrator privileges are needed.
+2. Open **Tamlul** from the Start menu or the desktop.
+3. On the first launch a "First-time setup" window opens: click **Start setup**. The software downloads the transcription engine (about 5GB, between 10 and 40 minutes) and shows the progress. At the end it checks the graphics card and says whether transcription will run on it.
 
-אם ההורדה נעצרת, "נסה שוב" ממשיך מאותה נקודה. אם משהו נכשל – "הצג פרטים" מראה מה קרה, ואפשר לצלם ולשלוח ל־Claude.
+If the download stops, "Try again" continues from the same point. If something fails – "Show details" shows what happened, and you can take a screenshot and send it to Claude.
 
-## הפעלה
+## Launching
 
-**Tamlul** מתפריט התחל או משולחן העבודה. התוכנה נפתחת בחלון משלה.
-לסיום עבודה – סוגרים את החלון.
+**Tamlul** from the Start menu or the desktop. The software opens in its own window.
+To finish working – close the window.
 
-אם מנוע התמלול נסגר או לא עולה, החלון מציע להפעיל אותו מחדש ולהציג את היומן. היומן נמצא גם ב**הגדרות ← מנוע התמלול**.
+If the transcription engine closes or does not start, the window offers to restart it and to show the log. The log is also in **Settings → Transcription engine**.
 
-### הסרה
-"הסרת התקנה" של Tamlul בהגדרות של Windows. הפרויקטים, ההגדרות ומנוע התמלול שהורד נשארים, אלא אם מסמנים "מחק גם את הפרויקטים, ההגדרות ומנוע התמלול שהורד". עדכון לגרסה חדשה לא נוגע בהם.
+### Uninstalling
+"Uninstall" for Tamlul in the Windows settings. The projects, the settings and the downloaded transcription engine remain, unless you check "Also delete the projects, the settings and the downloaded transcription engine". Updating to a new version does not touch them.
 
-## עבודה
+## Working
 
-### פרויקט חדש
-- **בחר קובץ** – הווידאו או ההקלטה.
-- **ערוצי אודיו נפרדים** (לא חובה) – אם בזום סימנת "הקלט קובץ אודיו נפרד לכל משתתף", מוסיפים כאן את הקבצים וכותבים ליד כל אחד את שם הדובר. כך זיהוי הדוברים מדויק לגמרי.
-- **התחל תמלול**. בפעם הראשונה לוקח עוד כמה דקות לטעון את המודל.
+### New project
+- **Choose file** – the video or the recording.
+- **Separate audio channels** (optional) – if in Zoom you checked "Record a separate audio file for each participant", add the files here and write the speaker's name next to each one. This makes speaker identification completely accurate.
+- **Start transcription**. The first time, it takes a few more minutes to load the model.
 
-### העורך
-| מה רוצים | איך עושים |
+### The editor
+| What you want | How to do it |
 |---|---|
-| לנגן / לעצור | מקש רווח, או ▶ |
-| לתקן טקסט | לוחצים על המשפט ומקלידים. כשמחליפים מילה, התוכנה שואלת אם לתקן אותה מעכשיו תמיד |
-| להחליף דובר | לוחצים על השם הצבעוני שליד המשפט |
-| לכוון זמנים | גוררים את קצוות הבלוק הצבעוני על גל הסאונד, או מקלידים זמן בתיבות |
-| לקבוע התחלה / סוף לפי הניגון | עוצרים את הניגון בנקודה המדויקת ולוחצים "⏱ התחלה" או "⏱ סוף" בשורה (או המקשים ‎[‎ ו־‎]‎ על המשפט המסומן) |
-| לחפש מילה | תיבת החיפוש (Ctrl+F). Enter = התוצאה הבאה, Shift+Enter = הקודמת, או החצים ▲▼ |
-| להחליף מילה | "⇄ החלפה" (Ctrl+H): כותבים מילה חלופית, ואז "החלף" לתוצאה המסומנת או "החלף הכל". אחרי "החלף הכל" אפשר ללחוץ "תקן תמיד" |
-| למחוק משפט (גם מהווידאו) | ✂ ליד המשפט, או מקש Delete |
-| לפצל משפט | עומדים עם הניגון במקום הפיצול ולוחצים ⑂ |
-| לחבר משפט לבא אחריו | ⤓ |
-| לקצר הפסקות ארוכות | "קצר הפסקות" – הקטעים שיימחקו מסומנים באדום |
-| לסמן אממ / אהה | "מילות מילוי" |
-| לחתוך קטע ידנית | "חיתוך ידני" ואז גוררים על גל הסאונד העליון |
-| לבטל חיתוך | לחיצה כפולה על הקטע האדום |
-| לשמוע את התוצאה לפני ייצוא | מסמנים "השמע בלי החיתוכים" |
-| לבטל פעולה | "בטל" או Ctrl+Z |
+| Play / pause | Space bar, or ▶ |
+| Fix text | Click the sentence and type. When you replace a word, the software asks whether to always correct it from now on |
+| Change speaker | Click the colored name next to the sentence |
+| Adjust timings | Drag the edges of the colored block on the waveform, or type a time in the boxes |
+| Set start / end from playback | Stop playback at the exact point and click "⏱ Start" or "⏱ End" on the row (or the keys ‎[‎ and ‎]‎ on the selected sentence) |
+| Search for a word | The search box (Ctrl+F). Enter = next result, Shift+Enter = previous, or the arrows ▲▼ |
+| Replace a word | "⇄ Replace" (Ctrl+H): type a replacement word, then "Replace" for the highlighted result or "Replace all". After "Replace all" you can click "Always correct" |
+| Delete a sentence (from the video too) | ✂ next to the sentence, or the Delete key |
+| Split a sentence | Stop playback at the split point and click ⑂ |
+| Join a sentence to the next one | ⤓ |
+| Shorten long pauses | "Shorten pauses" – the sections to be deleted are marked in red |
+| Mark umm / uhh | "Filler words" |
+| Cut a section manually | "Manual cut", then drag on the upper waveform |
+| Undo a cut | Double-click the red section |
+| Hear the result before exporting | Check "Play without the cuts" |
+| Undo an action | "Undo" or Ctrl+Z |
 
-השמירה אוטומטית.
+Saving is automatic.
 
-### דוברים
-כפתור **דוברים**: משנים "דובר 1" לשם אמיתי, ולוחצים **זכור קול**. בהקלטות הבאות התוכנה תזהה את האדם הזה לבד בשמו.
+### Speakers
+The **Speakers** button: change "Speaker 1" to a real name, and click **Remember voice**. In future recordings the software will recognize this person by name on its own.
 
-### הגדרות
-- **מילים מיוחדות** – שמות ומונחים (למשל Meida4U) כדי שיזוהו נכון.
-- **מילון תיקונים** – מילה שהתוכנה טועה בה תמיד, ומה צריך לכתוב במקומה.
-- רגישות זיהוי דוברים, אורך הפסקה לקיצור, ואפשרויות לכתוביות.
+### Settings
+- **Special words** – names and terms (for example Meida4U) so they are recognized correctly.
+- **Corrections dictionary** – a word the software always gets wrong, and what should be written instead.
+- Speaker identification sensitivity, pause length for shortening, and subtitle options.
 
-### ✨ עוזר AI
-לשונית **עוזר AI** בעורך (ליד "תמלול") קוראת את התמלול בעזרת Claude:
-- כפתורים מוכנים: **סיכום**, **פרקים ליוטיוב**, **נקודות עיקריות**, **ציטוטים לרשתות**, **כותרת ותיאור**, **מי הדוברים**.
-- אפשר לשאול כל שאלה על ההקלטה ולהמשיך לשאול שאלות המשך.
-- לחיצה על זמן בתשובה מקפיצה את הווידאו לאותו רגע. כשיש חיתוכים, הזמנים יכולים להיות לפי הגרסה הערוכה – כך הפרקים מתאימים לווידאו שמעלים ליוטיוב.
-- 📋 מעתיק את התשובה, 💾 שומר אותה לקובץ בתיקיית הייצוא. השיחה נשמרת בפרויקט.
+### ✨ AI assistant
+The **AI assistant** tab in the editor (next to "Transcription") reads the transcript with Claude:
+- Ready-made buttons: **Summary**, **YouTube chapters**, **Key points**, **Quotes for social media**, **Title and description**, **Who are the speakers**.
+- You can ask any question about the recording and keep asking follow-up questions.
+- Clicking a time in the answer jumps the video to that moment. When there are cuts, the times can follow the edited version – so the chapters match the video you upload to YouTube.
+- 📋 copies the answer, 💾 saves it to a file in the export folder. The conversation is saved in the project.
 
-**הגדרה (פעם אחת):** פותחים חשבון מפתחים של Claude, יוצרים מפתח API, טוענים קרדיט, ומדביקים את המפתח באחת משתי הדרכים:
-- בקובץ **‎.env** שבתיקיית הנתונים (**הגדרות ← תיקיית הנתונים ← פתח**): לחיצה ימנית ← "פתח באמצעות" ← פנקס רשימות, להדביק אחרי `ANTHROPIC_API_KEY=` ולשמור.
-- או בלשונית העוזר / ב**הגדרות ← עוזר AI**.
+**Setup (one time):** open a Claude developer account, create an API key, load credit, and paste the key in one of two ways:
+- In the **‎.env** file in the data folder (**Settings → Data folder → Open**): right-click → "Open with" → Notepad, paste after `ANTHROPIC_API_KEY=` and save.
+- Or in the assistant tab / in **Settings → AI assistant**.
 
-מפתח בקובץ ‎.env קודם למפתח שהוזן בתוכנה. **לא לשלוח את הקובץ ‎.env לאף אחד** – מי שיש לו את המפתח משתמש בקרדיט שלך. שם גם בוחרים מודל (Sonnet מומלץ לעברית) ורואים הערכה של ההוצאה. התשלום הוא לפי שימוש – בדרך כלל אגורות לפרק. הסכום המדויק מופיע בעמוד החיוב באתר של Claude.
+A key in the ‎.env file takes precedence over a key entered in the software. **Do not send the ‎.env file to anyone** – whoever has the key uses your credit. That is also where you choose a model (Sonnet is recommended for Hebrew) and see an estimate of the cost. Payment is by usage – usually agorot (cents) per episode. The exact amount appears on the billing page on Claude's website.
 
-### ייצוא
-- **וידאו ערוך** – בלי כל מה שסומן באדום ובלי המשפטים שנמחקו, יחד עם קובץ כתוביות מתאים.
-- **כתוביות SRT**, **Word**, **טקסט**.
-הקבצים נשמרים בתיקייה `exports` שבתיקיית הנתונים (כפתור "פתח את תיקיית הייצוא").
+### Export
+- **Edited video** – without everything marked in red and without the deleted sentences, together with a matching subtitle file.
+- **SRT subtitles**, **Word**, **Text**.
+The files are saved in the `exports` folder in the data folder (the "Open the export folder" button).
 
 ---
 
-## למפתחים (For developers)
+## For developers
 
 - Getting started: `install.bat` builds `.venv` (Python 3.11, torch cu124, `requirements.txt`) and `models\` in the repo. Then `npm install` and `cd src-tauri && cargo build` (first build ~8 min) → `src-tauri\target\debug\tamlul.exe`, run from the repo root (or set `TAMLUL_HOME`). Frontend files are embedded at build time, so rebuild after editing `app/static`. Without a `.venv`, a debug build opens the setup wizard and builds its runtime in the repo's `data\runtime` instead (it needs `src-tauri\bin\uv.exe` from `fetch-uv.ps1`, or uv on `PATH`).
 - `src-tauri/` – Tauri 2 shell. The UI in `app/static` is the Tauri frontend (served from `http://tauri.localhost`); on startup it picks a free port and a random per-launch token, launches `app\server.py` with the engine's Python (see "Python runtime") and `TAMLUL_PORT` and `TAMLUL_TOKEN` (stdout/stderr → `engine.log` in the data folder), and puts itself in a Windows job object so the engine dies with the window, also on a crash. The page gets the port and token from the `engine_info` command, waits for `GET /api/health` (`waitForEngine` in `app.js`), and sends the token as `X-Tamlul-Token` on every call (`?t=` on media URLs, since `<video src>` cannot send headers). CORS allows the Tauri origin only, and the window's CSP limits connections and media to `127.0.0.1`. File dialogs via `tauri-plugin-dialog`, external links via `tauri-plugin-opener`.
@@ -91,7 +91,7 @@
   - The shell keeps the engine's process handle. When the engine exits on its own it emits `engine-exited` and the window offers a restart and the log. `restart_engine` kills the whole engine tree (the venv `python.exe` is a launcher with a child) and starts a new one on a new port. `engine_log` returns the tail of `engine.log` in the data folder, also shown under Settings. Only one copy runs (`tauri-plugin-single-instance`); a second launch focuses the existing window.
   - Inspect the page: set `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` before starting the exe. WebView2 is the Edge engine, so H.264 and AAC play natively.
 - `app/server.py` – FastAPI server on `127.0.0.1` (`TAMLUL_PORT`, default 8765), background jobs. With `TAMLUL_TOKEN` set, every `/api` route except `/api/health` requires the token; without it (browser mode) nothing changes. Also: a tkinter file picker for browser mode, ranged media streaming. `.venv\Scripts\python.exe app\server.py` works on its own and opens the browser.
-- `app/engine.py` – models in `models\` next to the code, or `TAMLUL_MODELS`. faster-whisper with `ivrit-ai/whisper-large-v3-turbo-ct2` (CUDA float16, CPU int8 fallback), hotwords for vocabulary, SpeechBrain ECAPA voice prints for speaker clustering and enrollment (`data/speakers.json`), correction dictionary (keeps Hebrew prefixes ו/ה/ב/ל/מ/ש/כ).
+- `app/engine.py` – models in `models\` next to the code, or `TAMLUL_MODELS`. faster-whisper with `ivrit-ai/whisper-large-v3-turbo-ct2` (CUDA float16, CPU int8 fallback), hotwords for vocabulary, SpeechBrain ECAPA voice prints for speaker clustering and enrollment (`data/speakers.json`), correction dictionary.
 - `app/media.py` – ffmpeg (imageio-ffmpeg) for waveform peaks, decoding, silence/filler suggestions, and cut export via `select/aselect` with `fps` normalisation; tries `h264_nvenc`, falls back to `libx264`.
 - `app/exporters.py` – SRT / DOCX (RTL) / TXT.
 - `app/ai.py` – Claude Messages API (stdlib urllib, SSE streaming), transcript in a cached system block (`cache_control: ephemeral`) so follow-ups are cheap; key stored in `data/ai.json` and never sent to the browser; `TAMLUL_AI_URL` overrides the endpoint for testing. Chat history in `project.json` → `ai_chat`.
