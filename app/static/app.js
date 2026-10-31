@@ -10,14 +10,175 @@ const CUT_COLOR = 'rgba(214, 69, 69, 0.30)';
 const DELETED_COLOR = 'rgba(120, 120, 120, 0.22)';
 const KIND_LABEL = { silence: 'שקט', filler: 'מילוי', manual: 'חיתוך' };
 
+// ------------------------------------------------------------------ desktop / engine
+// בחלון טאורי הממשק מוגש מ-tauri.localhost והמנוע (server.py) רץ בנפרד על 127.0.0.1,
+// בפורט ועם טוקן שהמעטפת בוחרת בכל הפעלה (הפקודה engine_info).
+// בדפדפן רגיל השרת מגיש גם את הממשק, אז הכתובות יחסיות ואין טוקן.
+const TAURI = window.__TAURI__ || null;
+let API = '';
+let TOKEN = '';
+let ENGINE_ERROR = null;
+let ENGINE = null; // last engine_info: {port, token, error, generation, attached}
+let EXITED_GEN = 0; // generation of the last engine that exited on its own
+let WAITING_FOR_ENGINE = false;
+const ENGINE_GONE = () => !!ENGINE && EXITED_GEN === ENGINE.generation;
+
+function applyEngineInfo(info) {
+  ENGINE = info;
+  API = `http://127.0.0.1:${info.port}`;
+  TOKEN = info.token || '';
+  ENGINE_ERROR = info.error || null;
+}
+
+async function connectEngine() {
+  if (!TAURI) return;
+  applyEngineInfo(await TAURI.core.invoke('engine_info'));
+  // The shell reports when the engine process stops on its own (crash, killed, out of memory).
+  TAURI.event.listen('engine-exited', (e) => {
+    if (!ENGINE || e.payload.generation !== ENGINE.generation) return; // an engine we already replaced
+    EXITED_GEN = e.payload.generation;
+    if (WAITING_FOR_ENGINE) return; // waitForEngine notices and reports it itself
+    stopWatchingJob();
+    $('#jobOverlay').classList.add('hidden');
+    const code = e.payload.code == null ? '' : ` (קוד ${e.payload.code})`;
+    showEngineProblem('מנוע התמלול נסגר', `המנוע הפסיק לפעול${code}. עבודה שרצה באותו רגע נקטעה. אפשר להפעיל אותו מחדש בלי לסגור את התוכנה.`);
+  });
+}
+
+// ------------------------------------------------------------------ engine problems, restart, log
+async function engineLogText(lines = 150) {
+  try { return await TAURI.core.invoke('engine_log', { lines }); } catch (e) { return 'לא ניתן לקרוא את היומן: ' + e; }
+}
+
+function showEngineProblem(title, msg) {
+  const canRestart = TAURI && ENGINE && !ENGINE.attached;
+  openModal(`<h2>${esc(title)}</h2>
+    <p>${esc(msg)}</p>
+    <div class="row">
+      ${canRestart ? '<button class="btn primary" id="engRestart">הפעל את המנוע מחדש</button>' : ''}
+      ${TAURI ? '<button class="btn ghost" id="engLogBtn">הצג יומן</button>' : ''}
+    </div>
+    <pre class="engine-log hidden" id="engLog" dir="ltr"></pre>`);
+  $('#engRestart')?.addEventListener('click', restartEngine);
+  $('#engLogBtn')?.addEventListener('click', async () => {
+    const pre = $('#engLog');
+    pre.textContent = await engineLogText();
+    pre.classList.remove('hidden');
+    pre.scrollTop = pre.scrollHeight;
+  });
+}
+
+async function restartEngine() {
+  const btn = $('#engRestart') || $('#stEngRestart');
+  if (btn) { btn.disabled = true; btn.textContent = 'מפעיל מחדש…'; }
+  try {
+    applyEngineInfo(await TAURI.core.invoke('restart_engine'));
+  } catch (e) {
+    showEngineProblem('ההפעלה מחדש נכשלה', String(e));
+    return;
+  }
+  closeModal();
+  try { await waitForEngine(); } catch (_) { return; }
+  // Media URLs carry the old port, so an open project has to be reopened; save local edits first.
+  if (P && !$('#editor').classList.contains('hidden')) {
+    await saveNow();
+    if (dirty) { toast('המנוע חזר, אבל השינויים האחרונים לא נשמרו. נסה לשמור שוב לפני שתמשיך.', { error: true, timeout: 12000 }); return; }
+    openProject(P.id);
+  } else {
+    showHome();
+  }
+  toast('מנוע התמלול הופעל מחדש');
+}
+
+// Headers for every engine call; media URLs carry the token as ?t= instead.
+function authHeaders(extra = {}) {
+  return TOKEN ? { ...extra, 'X-Tamlul-Token': TOKEN } : extra;
+}
+function mediaUrl(path) {
+  return API + path + (TOKEN ? `?t=${encodeURIComponent(TOKEN)}` : '');
+}
+
+const MEDIA_EXT = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4a', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'wma'];
+const AUDIO_EXT = ['m4a', 'mp3', 'wav', 'aac', 'flac', 'ogg', 'wma', 'mp4'];
+
+async function pickFiles({ multiple = false, kind = 'media' } = {}) {
+  if (!TAURI) return (await api('/api/pick', { method: 'POST', body: { multiple, kind } })).files;
+  const res = await TAURI.dialog.open({
+    multiple,
+    filters: [
+      kind === 'audio' ? { name: 'קבצי אודיו', extensions: AUDIO_EXT } : { name: 'קבצי וידאו ואודיו', extensions: MEDIA_EXT },
+      { name: 'כל הקבצים', extensions: ['*'] },
+    ],
+  });
+  if (!res) return [];
+  return Array.isArray(res) ? res : [res];
+}
+
+function openExternal(url) {
+  if (TAURI) TAURI.opener.openUrl(url);
+  else window.open(url, '_blank', 'noopener');
+}
+
+// The engine loads torch and the models' code at startup; wait for it before the first call.
+async function waitForEngine(timeoutMs = 90000) {
+  WAITING_FOR_ENGINE = true;
+  try { await waitForEngineInner(timeoutMs); } finally { WAITING_FOR_ENGINE = false; }
+}
+async function waitForEngineInner(timeoutMs) {
+  const t0 = Date.now();
+  let shown = false;
+  const fail = (title, msg) => {
+    $('#jobOverlay').classList.add('hidden');
+    $('#jobBar').parentElement.classList.remove('hidden');
+    $('#jobCancel').classList.remove('hidden');
+    showEngineProblem(title, msg);
+    throw new Error(title);
+  };
+  if (ENGINE_ERROR) fail('המנוע לא עלה', ENGINE_ERROR);
+  for (;;) {
+    try {
+      const r = await fetch(API + '/api/health', { cache: 'no-store', headers: authHeaders() });
+      const h = r.ok ? await r.json() : null;
+      if (h && h.app === 'tamlul') {
+        if (!h.authed) fail('המנוע לא מזוהה', 'תוכנה אחרת עונה בפורט של המנוע. סגור את התוכנה ופתח אותה מחדש.');
+        break;
+      }
+    } catch (e) {
+      if (e.message === 'המנוע לא מזוהה') throw e;
+      /* not up yet */
+    }
+    if (ENGINE_GONE()) fail('מנוע התמלול נסגר', 'המנוע נסגר בזמן שעלה. היומן מראה מה קרה.');
+    if (!shown && Date.now() - t0 > 400) {
+      $('#jobTitle').textContent = 'טוען את מנוע התמלול…';
+      $('#jobMsg').textContent = 'בפעם הראשונה אחרי הדלקת המחשב זה יכול לקחת עד דקה.';
+      $('#jobBar').parentElement.classList.add('hidden');
+      $('#jobCancel').classList.add('hidden');
+      $('#jobOverlay').classList.remove('hidden');
+      shown = true;
+    }
+    if (Date.now() - t0 > timeoutMs) {
+      fail('המנוע לא עלה', TAURI
+        ? 'מנוע התמלול לא ענה תוך דקה וחצי. היומן מראה מה קרה.'
+        : 'הפרטים בקובץ data\\engine.log בתיקיית התוכנה. אם חסרה התקנה – להריץ install.bat.');
+    }
+    await new Promise((res) => setTimeout(res, 500));
+  }
+  if (shown) {
+    $('#jobOverlay').classList.add('hidden');
+    $('#jobBar').parentElement.classList.remove('hidden');
+    $('#jobCancel').classList.remove('hidden');
+  }
+}
+
 // ------------------------------------------------------------------ helpers
 async function api(path, opts = {}) {
   const o = { ...opts };
   if (o.body && typeof o.body !== 'string') {
     o.body = JSON.stringify(o.body);
-    o.headers = { 'Content-Type': 'application/json' };
+    o.headers = { ...o.headers, 'Content-Type': 'application/json' };
   }
-  const r = await fetch(path, o);
+  o.headers = authHeaders(o.headers);
+  const r = await fetch(API + path, o);
   let data = null;
   try { data = await r.json(); } catch (_) { /* empty */ }
   if (!r.ok) throw new Error((data && (data.error || data.detail)) || `שגיאה ${r.status}`);
@@ -36,6 +197,7 @@ function parseTime(str) {
   return parts.reduce((acc, v) => acc * 60 + v, 0);
 }
 function uid() { return Math.random().toString(16).slice(2, 12); }
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
@@ -101,6 +263,13 @@ async function openSettings() {
   const corr = Object.entries(s.corrections || {});
   const body = openModal(`
     <h2>הגדרות</h2>
+    <h3>מראה</h3>
+    <div class="row"><label>ערכת צבעים</label>
+      <select id="stTheme">
+        <option value="dark" ${tamlulTheme() === 'dark' ? 'selected' : ''}>כהה</option>
+        <option value="light" ${tamlulTheme() === 'light' ? 'selected' : ''}>בהיר</option>
+      </select></div>
+
     <h3>מילים מיוחדות</h3>
     <p class="hint">שמות, מונחים ומילים לועזיות שהתוכנה צריכה לזהות. מילה בכל שורה.</p>
     <textarea id="stVocab" placeholder="Meida4U&#10;זום&#10;פודקאסט">${esc((s.vocabulary || []).join('\n'))}</textarea>
@@ -136,7 +305,7 @@ async function openSettings() {
       <span class="hint" style="direction:ltr">${AI && AI.has_key ? esc(AI.masked) : 'לא הוגדר'}</span>
       ${AI && AI.from_env ? '<span class="badge">מקובץ ‎.env</span>' : ''}
       ${AI && AI.has_key && !AI.from_env ? '<button class="btn small ghost danger" id="stKeyDel">הסר מפתח</button>' : ''}</div>
-    <p class="hint">אפשר גם להדביק את המפתח בקובץ <b>‎.env</b> שבתיקיית התוכנה (בשורה ANTHROPIC_API_KEY=). מפתח בקובץ קודם למפתח שהוזן כאן.</p>
+    <p class="hint">אפשר גם להדביק את המפתח בקובץ <b>‎.env</b> שבתיקיית הנתונים (בשורה ANTHROPIC_API_KEY=). מפתח בקובץ קודם למפתח שהוזן כאן.${AI && AI.env_path ? `<br><span dir="ltr">${esc(AI.env_path)}</span>` : ''}</p>
     <div class="row"><label>${AI && AI.has_key ? 'החלפת מפתח' : 'הדבק מפתח'}</label>
       <input id="stKey" type="password" placeholder="sk-ant-..." autocomplete="off" style="flex:1">
       <button class="btn small" id="stKeyTest">שמור ובדוק</button></div>
@@ -149,8 +318,37 @@ async function openSettings() {
       <button class="btn small primary" data-url="billing">קניית קרדיטים ↗</button></div>
     <p class="hint">הקרדיט נקנה באתר של Claude (כרטיס אשראי, אפשר גם טעינה אוטומטית). ההוצאה המוצגת כאן היא הערכה של התוכנה; הסכום המדויק מופיע בעמוד החיוב באתר.</p>
 
+    <h3>תיקיית הנתונים</h3>
+    <p class="hint">הפרויקטים, ההגדרות, טביעות הקול ומפתח ה-API נשמרים כאן. עדכון או הסרה של התוכנה לא נוגעים בתיקייה הזו.</p>
+    <div class="row"><span class="hint" dir="ltr" id="stDataPath">…</span>
+      <button class="btn small" id="stOpenData">📂 פתח את תיקיית הנתונים</button></div>
+
+    ${TAURI ? `<h3>מנוע התמלול</h3>
+    <div class="row"><label>מצב</label><span class="hint" id="stEngState">בודק…</span></div>
+    <div class="row">
+      <button class="btn small" id="stEngLog">הצג יומן</button>
+      ${ENGINE && !ENGINE.attached ? '<button class="btn small ghost" id="stEngRestart">הפעל את המנוע מחדש</button>' : ''}</div>
+    <pre class="engine-log hidden" id="stEngLogText" dir="ltr"></pre>` : ''}
+
     <div class="row" style="margin-top:1.4rem"><button class="btn primary" id="stSave">שמור הגדרות</button></div>
   `);
+  api('/api/paths').then((p) => { $('#stDataPath') && ($('#stDataPath').textContent = p.data); })
+    .catch(() => { $('#stDataPath') && ($('#stDataPath').textContent = ''); });
+  $('#stOpenData').onclick = () => api('/api/open_folder', { method: 'POST', body: { which: 'data' } })
+    .catch((e) => toast(e.message, { error: true }));
+  if (TAURI) {
+    api('/api/health').then((h) => {
+      const dev = h.device === 'cuda' ? 'כרטיס מסך' : h.device === 'cpu' ? 'מעבד' : 'המודל ייטען בתמלול הבא';
+      $('#stEngState') && ($('#stEngState').textContent = `פועל · גרסה ${h.version} · ${dev} · פורט ${ENGINE.port}`);
+    }).catch(() => { $('#stEngState') && ($('#stEngState').textContent = 'לא עונה'); });
+    $('#stEngLog').onclick = async () => {
+      const pre = $('#stEngLogText');
+      pre.textContent = await engineLogText();
+      pre.classList.remove('hidden');
+      pre.scrollTop = pre.scrollHeight;
+    };
+    $('#stEngRestart')?.addEventListener('click', restartEngine);
+  }
   $('#stKeyTest').onclick = async () => { if (await saveKeyAndTest($('#stKey').value)) { closeModal(); openSettings(); } };
   $('#stKeyDel')?.addEventListener('click', async () => {
     if (!confirm('להסיר את מפתח ה-API מהמחשב?')) return;
@@ -159,6 +357,7 @@ async function openSettings() {
   });
   $('#stModel').onchange = async (e) => { AI = await api('/api/ai', { method: 'POST', body: { model: e.target.value } }); toast('המודל עודכן'); };
   $('#stSpentReset').onclick = async () => { AI = await api('/api/ai', { method: 'POST', body: { reset_spent: true } }); closeModal(); openSettings(); };
+  $('#stTheme').onchange = (e) => { tamlulSetTheme(e.target.value); recolorWaves(); };
   $('#stThr').oninput = (e) => { $('#stThrV').textContent = e.target.value; };
   $('#addCorr').onclick = () => $('#corrTable').insertAdjacentHTML('beforeend', corrRow('', ''));
   $('#corrTable').onclick = (e) => { if (e.target.dataset.delCorr !== undefined) e.target.closest('tr').remove(); };
@@ -221,7 +420,7 @@ function renderNewProject() {
 }
 
 $('#pickVideo').onclick = async () => {
-  const { files } = await api('/api/pick', { method: 'POST', body: { multiple: false } });
+  const files = await pickFiles({ multiple: false });
   if (files.length) {
     NP.video = files[0];
     if (!$('#npName').value) $('#npName').value = files[0].split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
@@ -230,7 +429,7 @@ $('#pickVideo').onclick = async () => {
 };
 $('#clearVideo').onclick = () => { NP.video = ''; renderNewProject(); };
 $('#addTracks').onclick = async () => {
-  const { files } = await api('/api/pick', { method: 'POST', body: { multiple: true, kind: 'audio' } });
+  const files = await pickFiles({ multiple: true, kind: 'audio' });
   for (const f of files) NP.tracks.push({ path: f, speaker: guessSpeaker(f) });
   renderNewProject();
 };
@@ -251,7 +450,9 @@ async function renderProjects() {
   const el = $('#projectList');
   if (!list.length) { el.innerHTML = '<div class="empty">עדיין אין פרויקטים. בחר קובץ ולחץ "התחל תמלול".</div>'; return; }
   el.innerHTML = list.map((p) => {
-    const st = p.job === 'running' ? '⏳ בעבודה…' : p.status === 'ready' ? `${p.segments} משפטים` : p.status === 'transcribing' ? '⚠ התמלול לא הסתיים' : '';
+    const st = p.job === 'running' ? '⏳ בעבודה…' : p.status === 'ready' ? `${p.segments} משפטים`
+      : p.status === 'error' ? '⚠ התמלול נכשל' : p.status === 'interrupted' ? '⚠ התמלול נקטע'
+      : p.status === 'cancelled' ? 'התמלול בוטל' : p.status === 'transcribing' ? '⚠ התמלול לא הסתיים' : '';
     return `<div class="proj" data-id="${p.id}">
       <div class="grow"><div class="name">${esc(p.name)}</div>
       <div class="meta">${fmt(p.duration, false)} · ${st} · ${new Date(p.updated * 1000).toLocaleDateString('he-IL')}</div></div>
@@ -295,30 +496,41 @@ function watchJob(pid, { title, onDone, hideable = false }) {
     if (hideable) { hidden = true; ov.classList.add('hidden'); return; }
     if (confirm('לבטל את הפעולה?')) await api(`/api/projects/${pid}/cancel`, { method: 'POST' });
   };
-  clearInterval(jobTimer);
+  // One request at a time: the next poll is scheduled only after the previous one returns, so a slow
+  // or stalled engine cannot pile up requests (that once ended in ERR_INSUFFICIENT_RESOURCES).
+  const mine = jobTimer = {};
   return new Promise((resolve) => {
-    jobTimer = setInterval(async () => {
-      let j;
-      try { j = await api(`/api/projects/${pid}/job`); } catch (_) { return; }
+    const poll = async () => {
+      if (jobTimer !== mine) return; // a newer watchJob took over
+      let j = null;
+      try { j = await api(`/api/projects/${pid}/job`); } catch (_) { /* engine busy or down */ }
+      if (jobTimer !== mine) return;
+      if (!j) { setTimeout(poll, 2000); return; }
       $('#jobBar').style.width = Math.round((j.progress || 0) * 100) + '%';
       $('#jobMsg').textContent = (j.message || '') + (j.progress ? `  (${Math.round(j.progress * 100)}%)` : '');
-      if (j.state !== 'running') {
-        clearInterval(jobTimer);
-        ov.classList.add('hidden');
-        if (j.state === 'error') toast(j.error || 'שגיאה', { error: true, timeout: 15000 });
-        else if (j.state === 'cancelled') toast('הפעולה בוטלה');
-        else if (j.state === 'idle') toast('הפעולה נקטעה (התוכנה נסגרה באמצע)', { error: true });
-        if (onDone) onDone(j, hidden);
-        resolve(j);
-      }
-    }, 900);
+      if (j.state === 'running') { setTimeout(poll, 900); return; }
+      jobTimer = null;
+      ov.classList.add('hidden');
+      if (j.state === 'error') toast(j.error || 'שגיאה', { error: true, timeout: 15000 });
+      else if (j.state === 'cancelled') toast('הפעולה בוטלה');
+      else if (j.state === 'idle') toast('הפעולה נקטעה (מנוע התמלול נסגר באמצע)', { error: true });
+      if (onDone) onDone(j, hidden);
+      resolve(j);
+    };
+    setTimeout(poll, 900);
   });
 }
+function stopWatchingJob() { jobTimer = null; }
 
 // ------------------------------------------------------------------ editor state
 let P = null;            // current project
 let wsMain = null, regMain = null;
 let lanes = [];          // [{ws, reg, track}]
+// after a theme switch: the waveforms are drawn on canvas, so they take colors from the CSS variables by hand
+function recolorWaves() {
+  if (wsMain) wsMain.setOptions({ waveColor: cssVar('--wave'), progressColor: cssVar('--wave-progress'), cursorColor: cssVar('--wave-progress') });
+  lanes.forEach((l) => l.ws.setOptions({ waveColor: cssVar('--wave-lane'), progressColor: cssVar('--wave-lane') }));
+}
 let removed = [];        // merged removed intervals
 let stopAt = null;
 let cutMode = false, unsubDrag = null, addingRegions = false;
@@ -445,8 +657,12 @@ async function openProject(pid) {
     return openProject(pid);
   }
   if (P.status !== 'ready') {
+    const why = job.state === 'error' ? 'אירעה שגיאה: ' + esc(job.error)
+      : P.status === 'error' ? 'אירעה שגיאה: ' + esc(P.error || '')
+      : P.status === 'cancelled' ? 'התמלול בוטל.'
+      : 'התמלול נקטע לפני שהסתיים, כנראה כי מנוע התמלול נסגר באמצע.';
     openModal(`<h2>התמלול לא הושלם</h2>
-      <p>${job.state === 'error' ? 'אירעה שגיאה: ' + esc(job.error) : 'התמלול הופסק לפני שהסתיים.'}</p>
+      <p>${why}</p>
       <div class="row"><button class="btn primary" id="retryBtn">תמלל שוב</button>
       <button class="btn ghost" id="homeBtn">חזרה</button></div>`);
     $('#retryBtn').onclick = async () => {
@@ -490,7 +706,7 @@ function teardownEditor() {
 
 async function buildEditor() {
   const base = `/api/projects/${P.id}`;
-  video.src = `${base}/media/main`;
+  video.src = mediaUrl(`${base}/media/main`);
   $('#audioOnly').classList.toggle('hidden', !!P.main.has_video);
   video.onerror = () => toast('הדפדפן לא מצליח לנגן את הקובץ הזה. נסה להמיר אותו ל-MP4.', { error: true, timeout: 12000 });
 
@@ -506,9 +722,9 @@ async function buildEditor() {
   wsMain = WaveSurfer.create({
     container: '#wave-main', media: video, height: 76, audioRate: currentSpeed(),
     peaks: [mainPeaks.peaks], duration,
-    waveColor: '#9aa6b2', progressColor: '#0f6e6a', cursorColor: '#0f6e6a', cursorWidth: 2,
+    waveColor: cssVar('--wave'), progressColor: cssVar('--wave-progress'), cursorColor: cssVar('--wave-progress'), cursorWidth: 2,
     minPxPerSec: zoom, autoScroll: true, autoCenter: false, dragToSeek: true,
-    plugins: [regMain, WaveSurfer.Timeline.create({ height: 16, style: { fontSize: '11px', color: '#66707c' } })],
+    plugins: [regMain, WaveSurfer.Timeline.create({ height: 16, style: { fontSize: '11px', color: cssVar('--muted') } })],
   });
 
   // lanes for speech segments: one per separate track, or one lane for the main audio
@@ -526,7 +742,7 @@ async function buildEditor() {
     const ws = WaveSurfer.create({
       container: $('.wave', wrap), backend: 'WebAudio', height: def.track === null ? 70 : 58,
       peaks: [peaks], duration,
-      waveColor: '#8f9ba7', progressColor: '#8f9ba7', cursorWidth: 0,
+      waveColor: cssVar('--wave-lane'), progressColor: cssVar('--wave-lane'), cursorWidth: 0,
       minPxPerSec: zoom, autoScroll: false, hideScrollbar: true, plugins: [reg],
     });
     const lane = { ws, reg, track: def.track };
@@ -1384,7 +1600,7 @@ function aiModelLabel() {
 }
 function openConsole(which) {
   if (!AI) return;
-  window.open(which === 'billing' ? AI.billing_url : AI.keys_url, '_blank', 'noopener');
+  openExternal(which === 'billing' ? AI.billing_url : AI.keys_url);
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-url]');
@@ -1540,8 +1756,8 @@ async function aiAsk({ preset = null, question = null, label }) {
     if (nearBottom) box.scrollTop = box.scrollHeight;
   };
   try {
-    const r = await fetch(`/api/projects/${P.id}/ai`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    const r = await fetch(`${API}/api/projects/${P.id}/ai`, {
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ preset, question, label, edited }), signal: aiCtrl.signal,
     });
     if (!r.ok) {
@@ -1646,6 +1862,10 @@ $('#aiKeySave').onclick = async () => {
 // ------------------------------------------------------------------ start
 (async function init() {
   renderNewProject();
+  try { await connectEngine(); } catch (e) { ENGINE_ERROR = 'engine_info: ' + e; }
+  // First launch of an installed copy: the Python runtime is built by the setup wizard first.
+  if (ENGINE && ENGINE.setup_needed) { location.replace('setup.html'); return; }
+  try { await waitForEngine(); } catch (_) { return; }
   try { await loadSettings(); } catch (e) { toast('לא מצליח להתחבר לתוכנה: ' + e.message, { error: true }); }
   window.ENROLLED = await api('/api/speakers').catch(() => []);
   await loadAI();

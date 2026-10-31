@@ -2,6 +2,7 @@
 שרת מקומי של תוכנת התמלול. רץ על המחשב בלבד (127.0.0.1) ופותח את העורך בדפדפן.
 Local server: python app/server.py  ->  http://127.0.0.1:8765
 """
+import hmac
 import json
 import os
 import re
@@ -18,7 +19,9 @@ APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_DIR))
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse, Response,  # noqa: E402
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 import ai  # noqa: E402
@@ -27,13 +30,67 @@ import exporters  # noqa: E402
 import media  # noqa: E402
 
 ROOT = APP_DIR.parent
-DATA = ROOT / "data"
+LEGACY_DATA = ROOT / "data"
+# User data (projects, voice prints, settings, the API key, exports) lives in TAMLUL_DATA when it is set:
+# the Tauri release build points it at %LOCALAPPDATA%\com.liormedan.tamlul, so updating or removing the
+# program never touches it. Without it (debug build, browser mode) everything stays next to the program.
+if os.environ.get("TAMLUL_DATA"):
+    DATA = Path(os.environ["TAMLUL_DATA"])
+    EXPORTS = DATA / "exports"
+    ENV_FILE = DATA / ".env"
+else:
+    DATA = LEGACY_DATA
+    EXPORTS = ROOT / "exports"
+    ENV_FILE = ROOT / ".env"
 PROJECTS = DATA / "projects"
-EXPORTS = ROOT / "exports"
+_USER_FILES = ("settings.json", "speakers.json", "ai.json")
+
+
+def _has_user_data(folder):
+    projects = folder / "projects"
+    return (projects.is_dir() and any(projects.iterdir())) or any((folder / f).is_file() for f in _USER_FILES)
+
+
+def migrate_legacy_data():
+    """One time: copy projects, settings, voice prints and the API key from the old folder next to the
+    program into DATA. Copy, not move: projects can point at media inside the old folder, and the old copy
+    is the backup until the user deletes it. Exports are not copied (they can be large videos)."""
+    if DATA.resolve() == LEGACY_DATA.resolve() or _has_user_data(DATA) or not LEGACY_DATA.is_dir() \
+            or not _has_user_data(LEGACY_DATA):
+        return
+    DATA.mkdir(parents=True, exist_ok=True)
+    if (LEGACY_DATA / "projects").is_dir():
+        shutil.copytree(LEGACY_DATA / "projects", PROJECTS, dirs_exist_ok=True)
+    for f in _USER_FILES:
+        if (LEGACY_DATA / f).is_file():
+            shutil.copy2(LEGACY_DATA / f, DATA / f)
+    if (ROOT / ".env").is_file() and not ENV_FILE.exists():
+        shutil.copy2(ROOT / ".env", ENV_FILE)
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    (DATA / "migrated_from.txt").write_text(f"{stamp}\n{LEGACY_DATA}\n", encoding="utf-8")
+    try:
+        (LEGACY_DATA / "MOVED.txt").write_text(
+            f"{stamp}: הפרויקטים, ההגדרות, טביעות הקול ומפתח ה-API הועתקו אל\n{DATA}\n"
+            "התוכנה עובדת עכשיו מהתיקייה החדשה. התיקייה הזו נשארה כגיבוי ואפשר למחוק אותה אחרי שבדקת "
+            "שהכול נמצא. תיקיית הייצוא הישנה לא הועתקה.\n\n"
+            f"{stamp}: projects, settings, voice prints and the API key were copied to\n{DATA}\n"
+            "This folder is kept as a backup. Old exports were not copied.\n", encoding="utf-8")
+    except OSError:
+        pass
+    print(f"Copied user data from {LEGACY_DATA} to {DATA}", flush=True)
+
+
+migrate_legacy_data()
 for d in (DATA, PROJECTS, EXPORTS):
     d.mkdir(parents=True, exist_ok=True)
 
 PORT = int(os.environ.get("TAMLUL_PORT", "8765"))
+APP_VERSION = "0.1.0"
+API_VERSION = 1
+# The Tauri shell starts the engine with a random per-launch token. When it is set, every /api call
+# must carry it, so other programs on this computer cannot drive the engine. Browser mode starts
+# without a token.
+TOKEN = os.environ.get("TAMLUL_TOKEN") or None
 
 DEFAULT_SETTINGS = {
     "vocabulary": [],
@@ -46,7 +103,45 @@ DEFAULT_SETTINGS = {
     "srt_rtl_fix": False,
 }
 
+def _authorized(scope):
+    """Header X-Tamlul-Token, or ?t= for media URLs (a <video src> cannot send headers)."""
+    sent = ""
+    for k, v in scope.get("headers") or ():
+        if k == b"x-tamlul-token":
+            sent = v.decode("latin-1")
+            break
+    if not sent and "/media/" in scope["path"]:
+        from urllib.parse import parse_qs
+        sent = (parse_qs(scope.get("query_string", b"").decode("latin-1")).get("t") or [""])[0]
+    return hmac.compare_digest(sent.encode(), TOKEN.encode())
+
+
+class TokenGuard:
+    """Plain ASGI middleware (not BaseHTTPMiddleware) so streaming responses pass through untouched.
+    Added before CORS, so CORS stays the outer layer: preflights are answered there and a 401 still
+    carries the CORS headers the window needs to read it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (TOKEN and scope["type"] == "http" and scope["path"].startswith("/api/")
+                and scope["path"] != "/api/health" and scope.get("method") != "OPTIONS"
+                and not _authorized(scope)):
+            await JSONResponse({"error": "unauthorized"}, status_code=401)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 app = FastAPI()
+app.add_middleware(TokenGuard)
+# חלון הטאורי מגיש את הממשק מ-tauri.localhost וקורא לשרת הזה ישירות
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 _file_lock = threading.Lock()
 
 
@@ -127,11 +222,46 @@ def start_job(pid, kind, fn):
         except Exception as e:
             traceback.print_exc()
             job["state"] = "error"
-            job["error"] = str(e)
-            job["message"] = "שגיאה: " + str(e)
+            job["error"] = friendly_error(e)
+            job["message"] = "שגיאה: " + job["error"]
 
     threading.Thread(target=run, daemon=True).start()
     return job
+
+
+_MEMORY_ERRORS = ("out of memory", "mkl_malloc", "cublas_status", "cuda failed", "failed to allocate",
+                  "cudnn_status", "memoryerror")
+
+
+def friendly_error(e):
+    """Turn low-level GPU / memory failures into something a user can act on; keep the detail."""
+    s = f"{type(e).__name__}: {e}" if isinstance(e, MemoryError) else str(e)
+    if any(k in s.lower() for k in _MEMORY_ERRORS):
+        return ("לא היה מספיק זיכרון במחשב או בכרטיס המסך. סגור תוכנות כבדות ונסה שוב. "
+                f"(פרטים: {s[:160]})")
+    return s
+
+
+def effective_status(p):
+    """A project marked "transcribing" with no running job was cut off (engine closed or crashed)."""
+    st = p.get("status")
+    if st == "transcribing":
+        job = JOBS.get(p["id"])
+        if not job or job["state"] != "running":
+            return "interrupted"
+    return st
+
+
+def set_status(pid, status, error=None):
+    p = load_project(pid)
+    if p is None:
+        return
+    p["status"] = status
+    if error:
+        p["error"] = error
+    else:
+        p.pop("error", None)
+    save_project(p)
 
 
 def job_public(job):
@@ -187,10 +317,23 @@ def transcribe_job(pid):
         p["segments"] = segments
         p["cuts"] = []
         p["status"] = "ready"
+        p.pop("error", None)
         save_project(p)
         log(f"הסתיים: {len(segments)} משפטים")
         return {"segments": len(segments)}
-    return fn
+
+    def tracked(job, log):
+        # The outcome is saved in project.json, so it survives an engine restart (JOBS lives in memory).
+        set_status(pid, "transcribing")
+        try:
+            return fn(job, log)
+        except engine.Cancelled:
+            set_status(pid, "cancelled")
+            raise
+        except Exception as e:
+            set_status(pid, "error", friendly_error(e))
+            raise
+    return tracked
 
 
 # ---------------------------------------------------------------- API: settings & speakers
@@ -238,9 +381,8 @@ def api_delete_speaker(name: str):
 
 
 # ---------------------------------------------------------------- API: file picker
+# Browser mode only: the Tauri window opens its own dialog (tauri-plugin-dialog).
 _pick_lock = threading.Lock()
-# desktop.py מחליף את זה בדיאלוג של חלון התוכנה: PICK_HOOK(multiple, kind) -> list[str]
-PICK_HOOK = None
 
 
 @app.post("/api/pick")
@@ -250,8 +392,6 @@ async def api_pick(req: Request):
     kind = body.get("kind", "media")
 
     def pick():
-        if PICK_HOOK is not None:
-            return list(PICK_HOOK(multiple, kind) or [])
         import tkinter as tk
         from tkinter import filedialog
         root = tk.Tk()
@@ -276,6 +416,18 @@ async def api_pick(req: Request):
     return {"files": [str(Path(f)) for f in files]}
 
 
+# ---------------------------------------------------------------- API: health
+@app.get("/api/health")
+def api_health(req: Request):
+    """Open without a token. `authed` tells the caller whether its token matches this engine, so the
+    shell can tell its own engine from another program that happens to answer on the port."""
+    sent = req.headers.get("x-tamlul-token", "")
+    return {"app": "tamlul", "version": APP_VERSION, "api": API_VERSION,
+            "authed": (not TOKEN) or hmac.compare_digest(sent.encode(), TOKEN.encode()),
+            "token_required": bool(TOKEN), "fake": engine.FAKE,
+            "device": engine._whisper_device}  # None until the first transcription loads the model
+
+
 # ---------------------------------------------------------------- API: projects
 @app.get("/api/projects")
 def api_projects():
@@ -285,7 +437,8 @@ def api_projects():
         if p:
             job = JOBS.get(p["id"])
             out.append({"id": p["id"], "name": p["name"], "updated": p.get("updated", 0),
-                        "duration": p.get("duration", 0), "status": p.get("status"),
+                        "duration": p.get("duration", 0), "status": effective_status(p),
+                        "error": p.get("error"),
                         "segments": len(p.get("segments", [])),
                         "job": job_public(job)["state"] if job else "idle"})
     return sorted(out, key=lambda x: -x["updated"])
@@ -340,6 +493,7 @@ def api_project(pid: str):
     p = load_project(pid)
     if p is None:
         raise HTTPException(404)
+    p["status"] = effective_status(p)
     return p
 
 
@@ -573,21 +727,25 @@ async def api_export(pid: str, req: Request):
 @app.post("/api/open_folder")
 async def api_open_folder(req: Request):
     body = await req.json()
-    folder = Path(body.get("folder") or EXPORTS)
-    try:
-        folder.resolve().relative_to(ROOT.resolve())
-    except ValueError:
+    folder = DATA if body.get("which") == "data" else Path(body.get("folder") or EXPORTS)
+    # Only folders that belong to the program: its own folder, or the user-data folder.
+    allowed = {ROOT.resolve(), DATA.resolve()}
+    if not any(folder.resolve() == a or a in folder.resolve().parents for a in allowed):
         raise HTTPException(400)
     if sys.platform == "win32":
         os.startfile(str(folder))  # noqa
     return {"ok": True}
 
 
+@app.get("/api/paths")
+def api_paths():
+    """Where things are, for the settings screen. Behind the token like every other route."""
+    return {"data": str(DATA), "exports": str(EXPORTS), "env": str(ENV_FILE),
+            "models": str(engine.MODELS_DIR), "separate": DATA.resolve() != LEGACY_DATA.resolve()}
+
+
 # ---------------------------------------------------------------- API: AI assistant (Claude API)
 AI_FILE = DATA / "ai.json"  # kept apart from settings.json; the key never goes back to the browser
-
-
-ENV_FILE = ROOT / ".env"
 
 
 def read_env():
@@ -763,8 +921,8 @@ app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(APP_DIR / "static" / "index.html",
-                        headers={"Cache-Control": "no-store"})
+    # index.html uses relative asset paths (the same file is the Tauri frontend)
+    return RedirectResponse("/static/index.html")
 
 
 @app.exception_handler(HTTPException)

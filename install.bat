@@ -1,9 +1,10 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title Tamlul - installation
+title Tamlul - developer setup
 echo ==========================================================
-echo   Tamlul - Hebrew transcription  -  one-time installation
+echo   Tamlul - developer setup (.venv and models in the repo)
+echo   Users install Tamlul_x.y.z_x64-setup.exe instead.
 echo   This downloads about 5 GB. It can take 15-40 minutes.
 echo ==========================================================
 echo.
@@ -44,13 +45,11 @@ echo [4/4] Downloading the models and testing the graphics card...
 "%VPY%" app\setup_models.py || goto fail
 
 echo.
-echo Creating a desktop shortcut "Tamlul"...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\Tamlul.lnk'); $s.TargetPath='%~dp0start.bat'; $s.WorkingDirectory='%~dp0'; $s.IconLocation='%SystemRoot%\System32\shell32.dll,138'; $s.Save()"
-
-echo.
 echo ==========================================================
-echo   Installation finished!
-echo   Double-click "Tamlul" on the desktop to start.
+echo   Setup finished. Build and run the app:
+echo     npm install
+echo     cd src-tauri ^&^& cargo build
+echo     src-tauri\target\debug\tamlul.exe
 echo ==========================================================
 pause
 exit /b 0

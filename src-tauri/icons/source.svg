@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Tamlul app icon. Regenerate the PNG/ICO set with: render this to 1024px PNG, then `npx tauri icon`. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#138a85"/>
+      <stop offset="1" stop-color="#0b5a57"/>
+    </linearGradient>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="210" fill="url(#bg)"/>
+  <text x="512" y="660" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="700" font-size="620" fill="#ffffff">ת</text>
+  <g fill="#bfe6e3">
+    <rect x="337" y="770" width="46" height="70" rx="23"/>
+    <rect x="417" y="740" width="46" height="130" rx="23"/>
+    <rect x="497" y="760" width="46" height="90" rx="23"/>
+    <rect x="577" y="730" width="46" height="150" rx="23"/>
+    <rect x="657" y="775" width="46" height="60" rx="23"/>
+  </g>
+</svg>

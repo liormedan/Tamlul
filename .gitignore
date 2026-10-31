@@ -7,9 +7,12 @@ __pycache__/
 models/
 
 # User data: projects, speaker voice prints, settings, API key (data/ai.json),
-# desktop.log and the WebView2 profile (data/webview)
+# and engine.log (a debug build keeps them here; a release build in %LOCALAPPDATA%)
 data/
 exports/
+
+# Tauri / Node (src-tauri/.gitignore covers target/ and gen/schemas)
+node_modules/
 
 # Secrets
 .env
