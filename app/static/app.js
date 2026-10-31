@@ -297,7 +297,7 @@ async function openSettings() {
       <span class="hint" style="direction:ltr">${AI && AI.has_key ? esc(AI.masked) : 'לא הוגדר'}</span>
       ${AI && AI.from_env ? '<span class="badge">מקובץ ‎.env</span>' : ''}
       ${AI && AI.has_key && !AI.from_env ? '<button class="btn small ghost danger" id="stKeyDel">הסר מפתח</button>' : ''}</div>
-    <p class="hint">אפשר גם להדביק את המפתח בקובץ <b>‎.env</b> שבתיקיית התוכנה (בשורה ANTHROPIC_API_KEY=). מפתח בקובץ קודם למפתח שהוזן כאן.</p>
+    <p class="hint">אפשר גם להדביק את המפתח בקובץ <b>‎.env</b> שבתיקיית הנתונים (בשורה ANTHROPIC_API_KEY=). מפתח בקובץ קודם למפתח שהוזן כאן.${AI && AI.env_path ? `<br><span dir="ltr">${esc(AI.env_path)}</span>` : ''}</p>
     <div class="row"><label>${AI && AI.has_key ? 'החלפת מפתח' : 'הדבק מפתח'}</label>
       <input id="stKey" type="password" placeholder="sk-ant-..." autocomplete="off" style="flex:1">
       <button class="btn small" id="stKeyTest">שמור ובדוק</button></div>
@@ -310,6 +310,11 @@ async function openSettings() {
       <button class="btn small primary" data-url="billing">קניית קרדיטים ↗</button></div>
     <p class="hint">הקרדיט נקנה באתר של Claude (כרטיס אשראי, אפשר גם טעינה אוטומטית). ההוצאה המוצגת כאן היא הערכה של התוכנה; הסכום המדויק מופיע בעמוד החיוב באתר.</p>
 
+    <h3>תיקיית הנתונים</h3>
+    <p class="hint">הפרויקטים, ההגדרות, טביעות הקול ומפתח ה-API נשמרים כאן. עדכון או הסרה של התוכנה לא נוגעים בתיקייה הזו.</p>
+    <div class="row"><span class="hint" dir="ltr" id="stDataPath">…</span>
+      <button class="btn small" id="stOpenData">📂 פתח את תיקיית הנתונים</button></div>
+
     ${TAURI ? `<h3>מנוע התמלול</h3>
     <div class="row"><label>מצב</label><span class="hint" id="stEngState">בודק…</span></div>
     <div class="row">
@@ -319,6 +324,10 @@ async function openSettings() {
 
     <div class="row" style="margin-top:1.4rem"><button class="btn primary" id="stSave">שמור הגדרות</button></div>
   `);
+  api('/api/paths').then((p) => { $('#stDataPath') && ($('#stDataPath').textContent = p.data); })
+    .catch(() => { $('#stDataPath') && ($('#stDataPath').textContent = ''); });
+  $('#stOpenData').onclick = () => api('/api/open_folder', { method: 'POST', body: { which: 'data' } })
+    .catch((e) => toast(e.message, { error: true }));
   if (TAURI) {
     api('/api/health').then((h) => {
       const dev = h.device === 'cuda' ? 'כרטיס מסך' : h.device === 'cpu' ? 'מעבד' : 'המודל ייטען בתמלול הבא';

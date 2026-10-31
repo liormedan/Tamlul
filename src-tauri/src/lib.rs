@@ -9,9 +9,14 @@
 //!
 //! The shell keeps the engine's process handle: a watcher thread emits
 //! `engine-exited` to the window when it stops on its own, `restart_engine`
-//! replaces it, and `engine_log` returns the tail of data/engine.log so the
+//! replaces it, and `engine_log` returns the tail of engine.log so the
 //! window can show what happened. Only one copy of the app runs at a time; a
 //! second launch brings the existing window to the front.
+//!
+//! User data: a release build keeps projects, settings and engine.log in
+//! %LOCALAPPDATA%\Tamlul (passed to the engine as TAMLUL_DATA), so updating or
+//! removing the program never touches them. A debug build keeps the repo's
+//! data folder. Setting TAMLUL_DATA overrides both.
 //!
 //! Development: set TAMLUL_PORT (and TAMLUL_TOKEN if that engine has one)
 //! before starting the exe to attach to an engine you started yourself.
@@ -50,16 +55,44 @@ struct EngineState {
     info: EngineInfo,
     child: Option<Child>,
     root: Option<PathBuf>,
+    data: Option<DataDir>,
+}
+
+/// Where user data and engine.log go.
+#[derive(Clone)]
+struct DataDir {
+    path: PathBuf,
+    /// Passed to the engine as TAMLUL_DATA. False in development, where the
+    /// engine keeps its old layout next to the code (data/, exports/, .env).
+    pass_to_engine: bool,
+}
+
+/// TAMLUL_DATA wins. Otherwise a release build keeps user data in
+/// %LOCALAPPDATA%\Tamlul, apart from the program, and a debug build keeps the
+/// repo's data folder so development data stays where it was.
+fn data_dir(root: Option<&Path>) -> Option<DataDir> {
+    if let Some(d) = std::env::var_os("TAMLUL_DATA").filter(|d| !d.is_empty()) {
+        return Some(DataDir { path: PathBuf::from(d), pass_to_engine: true });
+    }
+    if !cfg!(debug_assertions) {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            return Some(DataDir { path: PathBuf::from(local).join("Tamlul"), pass_to_engine: true });
+        }
+    }
+    root.map(|r| DataDir { path: r.join("data"), pass_to_engine: false })
 }
 
 struct Engine(Mutex<EngineState>);
 
 impl Engine {
     fn new() -> Self {
+        let root = project_root();
+        let data = data_dir(root.as_deref());
         Engine(Mutex::new(EngineState {
             info: EngineInfo { port: 0, token: String::new(), error: None, generation: 0, attached: false },
             child: None,
-            root: project_root(),
+            root,
+            data,
         }))
     }
 }
@@ -88,11 +121,11 @@ async fn restart_engine(engine: tauri::State<'_, Engine>) -> Result<EngineInfo, 
     Ok(st.info.clone())
 }
 
-/// The last `lines` lines of data/engine.log (default 200), read from the end of the file.
+/// The last `lines` lines of engine.log (default 200), read from the end of the file.
 #[tauri::command]
 fn engine_log(engine: tauri::State<'_, Engine>, lines: Option<usize>) -> Result<String, String> {
-    let root = engine.0.lock().unwrap().root.clone().ok_or("app/server.py not found")?;
-    let path = root.join("data").join("engine.log");
+    let data = engine.0.lock().unwrap().data.clone().ok_or("app/server.py not found")?;
+    let path = data.path.join("engine.log");
     let mut f = File::open(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
     let start = len.saturating_sub(256 * 1024);
@@ -132,16 +165,16 @@ fn project_root() -> Option<PathBuf> {
         .find(|d| d.join("app").join("server.py").is_file())
 }
 
-fn spawn_engine(root: &Path, port: u16, token: &str) -> Result<Child, String> {
+fn spawn_engine(root: &Path, data: &DataDir, port: u16, token: &str) -> Result<Child, String> {
     let python = root.join(".venv").join("Scripts").join("python.exe");
     if !python.is_file() {
         return Err(format!("{} not found - run install.bat first", python.display()));
     }
-    fs::create_dir_all(root.join("data")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&data.path).map_err(|e| format!("{}: {e}", data.path.display()))?;
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(root.join("data").join("engine.log"))
+        .open(data.path.join("engine.log"))
         .map_err(|e| e.to_string())?;
     let log_err = log_file.try_clone().map_err(|e| e.to_string())?;
 
@@ -156,6 +189,11 @@ fn spawn_engine(root: &Path, port: u16, token: &str) -> Result<Child, String> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_err));
+    if data.pass_to_engine {
+        cmd.env("TAMLUL_DATA", &data.path);
+    } else {
+        cmd.env_remove("TAMLUL_DATA");
+    }
     no_window(&mut cmd);
     cmd.spawn().map_err(|e| format!("failed to start {}: {e}", python.display()))
 }
@@ -166,9 +204,10 @@ fn launch(st: &mut EngineState) {
     if st.info.token.is_empty() {
         st.info.token = random_token();
     }
-    let result = st.root.clone().ok_or_else(|| "app/server.py not found".to_string()).and_then(|root| {
+    let paths = st.root.clone().zip(st.data.clone()).ok_or_else(|| "app/server.py not found".to_string());
+    let result = paths.and_then(|(root, data)| {
         let port = free_port()?;
-        spawn_engine(&root, port, &st.info.token).map(|child| (port, child))
+        spawn_engine(&root, &data, port, &st.info.token).map(|child| (port, child))
     });
     match result {
         Ok((port, child)) => {

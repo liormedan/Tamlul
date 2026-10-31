@@ -30,9 +30,58 @@ import exporters  # noqa: E402
 import media  # noqa: E402
 
 ROOT = APP_DIR.parent
-DATA = ROOT / "data"
+LEGACY_DATA = ROOT / "data"
+# User data (projects, voice prints, settings, the API key, exports) lives in TAMLUL_DATA when it is set:
+# the Tauri release build points it at %LOCALAPPDATA%\Tamlul, so updating or removing the program never
+# touches it. Without it (development, browser mode, the pywebview window) everything stays next to the
+# program, exactly as before.
+if os.environ.get("TAMLUL_DATA"):
+    DATA = Path(os.environ["TAMLUL_DATA"])
+    EXPORTS = DATA / "exports"
+    ENV_FILE = DATA / ".env"
+else:
+    DATA = LEGACY_DATA
+    EXPORTS = ROOT / "exports"
+    ENV_FILE = ROOT / ".env"
 PROJECTS = DATA / "projects"
-EXPORTS = ROOT / "exports"
+_USER_FILES = ("settings.json", "speakers.json", "ai.json")
+
+
+def _has_user_data(folder):
+    projects = folder / "projects"
+    return (projects.is_dir() and any(projects.iterdir())) or any((folder / f).is_file() for f in _USER_FILES)
+
+
+def migrate_legacy_data():
+    """One time: copy projects, settings, voice prints and the API key from the old folder next to the
+    program into DATA. Copy, not move: projects can point at media inside the old folder, and the old copy
+    is the backup until the user deletes it. Exports are not copied (they can be large videos)."""
+    if DATA.resolve() == LEGACY_DATA.resolve() or _has_user_data(DATA) or not LEGACY_DATA.is_dir() \
+            or not _has_user_data(LEGACY_DATA):
+        return
+    DATA.mkdir(parents=True, exist_ok=True)
+    if (LEGACY_DATA / "projects").is_dir():
+        shutil.copytree(LEGACY_DATA / "projects", PROJECTS, dirs_exist_ok=True)
+    for f in _USER_FILES:
+        if (LEGACY_DATA / f).is_file():
+            shutil.copy2(LEGACY_DATA / f, DATA / f)
+    if (ROOT / ".env").is_file() and not ENV_FILE.exists():
+        shutil.copy2(ROOT / ".env", ENV_FILE)
+    stamp = time.strftime("%Y-%m-%d %H:%M")
+    (DATA / "migrated_from.txt").write_text(f"{stamp}\n{LEGACY_DATA}\n", encoding="utf-8")
+    try:
+        (LEGACY_DATA / "MOVED.txt").write_text(
+            f"{stamp}: הפרויקטים, ההגדרות, טביעות הקול ומפתח ה-API הועתקו אל\n{DATA}\n"
+            "התוכנה עובדת עכשיו מהתיקייה החדשה. התיקייה הזו נשארה כגיבוי ואפשר למחוק אותה אחרי שבדקת "
+            "שהכול נמצא. תיקיית הייצוא הישנה לא הועתקה.\n\n"
+            f"{stamp}: projects, settings, voice prints and the API key were copied to\n{DATA}\n"
+            "This folder is kept as a backup. Old exports were not copied.\n", encoding="utf-8")
+    except OSError:
+        pass
+    print(f"Copied user data from {LEGACY_DATA} to {DATA}", flush=True)
+
+
+migrate_legacy_data()
 for d in (DATA, PROJECTS, EXPORTS):
     d.mkdir(parents=True, exist_ok=True)
 
@@ -682,21 +731,25 @@ async def api_export(pid: str, req: Request):
 @app.post("/api/open_folder")
 async def api_open_folder(req: Request):
     body = await req.json()
-    folder = Path(body.get("folder") or EXPORTS)
-    try:
-        folder.resolve().relative_to(ROOT.resolve())
-    except ValueError:
+    folder = DATA if body.get("which") == "data" else Path(body.get("folder") or EXPORTS)
+    # Only folders that belong to the program: its own folder, or the user-data folder.
+    allowed = {ROOT.resolve(), DATA.resolve()}
+    if not any(folder.resolve() == a or a in folder.resolve().parents for a in allowed):
         raise HTTPException(400)
     if sys.platform == "win32":
         os.startfile(str(folder))  # noqa
     return {"ok": True}
 
 
+@app.get("/api/paths")
+def api_paths():
+    """Where things are, for the settings screen. Behind the token like every other route."""
+    return {"data": str(DATA), "exports": str(EXPORTS), "env": str(ENV_FILE),
+            "models": str(engine.MODELS_DIR), "separate": DATA.resolve() != LEGACY_DATA.resolve()}
+
+
 # ---------------------------------------------------------------- API: AI assistant (Claude API)
 AI_FILE = DATA / "ai.json"  # kept apart from settings.json; the key never goes back to the browser
-
-
-ENV_FILE = ROOT / ".env"
 
 
 def read_env():
