@@ -8,26 +8,26 @@ No file is sent to the internet – everything stays on the computer.
 
 1. Double-click **Tamlul_0.1.0_x64-setup.exe**. No administrator privileges are needed.
 2. Open **Tamlul** from the Start menu or the desktop.
-3. On the first launch a "First-time setup" ("התקנה ראשונה") window opens: click **Start setup** (התחל התקנה). The software downloads the transcription engine (about 5GB, between 10 and 40 minutes) and shows the progress. At the end it checks the graphics card and says whether transcription will run on it.
+3. On the first launch a "First-time setup" window opens: click **Start setup**. The software downloads the transcription engine (about 5GB, between 10 and 40 minutes) and shows the progress. At the end it checks the graphics card and says whether transcription will run on it.
 
-If the download stops, "Try again" ("נסה שוב") continues from the same point. If something fails – "Show details" ("הצג פרטים") shows what happened, and you can take a screenshot and send it to Claude.
+If the download stops, "Try again" continues from the same point. If something fails – "Show details" shows what happened, and you can take a screenshot and send it to Claude.
 
 ## Launching
 
 **Tamlul** from the Start menu or the desktop. The software opens in its own window.
 To finish working – close the window.
 
-If the transcription engine closes or does not start, the window offers to restart it and to show the log. The log is also in **Settings → Transcription engine** (הגדרות → מנוע התמלול).
+If the transcription engine closes or does not start, the window offers to restart it and to show the log. The log is also in **Settings → Transcription engine**.
 
 ### Uninstalling
-"Uninstall" for Tamlul in the Windows settings. The projects, the settings and the downloaded transcription engine remain, unless you check "Also delete the projects, the settings and the downloaded transcription engine" ("מחק גם את הפרויקטים, ההגדרות ומנוע התמלול שהורד"). Updating to a new version does not touch them.
+"Uninstall" for Tamlul in the Windows settings. The projects, the settings and the downloaded transcription engine remain, unless you check "Also delete the projects, the settings and the downloaded transcription engine". Updating to a new version does not touch them.
 
 ## Working
 
 ### New project
-- **Choose file** (בחר קובץ) – the video or the recording.
-- **Separate audio channels** (ערוצי אודיו נפרדים) (optional) – if in Zoom you checked "Record a separate audio file for each participant", add the files here and write the speaker's name next to each one. This makes speaker identification completely accurate.
-- **Start transcription** (התחל תמלול). The first time, it takes a few more minutes to load the model.
+- **Choose file** – the video or the recording.
+- **Separate audio channels** (optional) – if in Zoom you checked "Record a separate audio file for each participant", add the files here and write the speaker's name next to each one. This makes speaker identification completely accurate.
+- **Start transcription**. The first time, it takes a few more minutes to load the model.
 
 ### The editor
 | What you want | How to do it |
@@ -36,46 +36,46 @@ If the transcription engine closes or does not start, the window offers to resta
 | Fix text | Click the sentence and type. When you replace a word, the software asks whether to always correct it from now on |
 | Change speaker | Click the colored name next to the sentence |
 | Adjust timings | Drag the edges of the colored block on the waveform, or type a time in the boxes |
-| Set start / end from playback | Stop playback at the exact point and click "⏱ Start" ("⏱ התחלה") or "⏱ End" ("⏱ סוף") on the row (or the keys ‎[‎ and ‎]‎ on the selected sentence) |
+| Set start / end from playback | Stop playback at the exact point and click "⏱ Start" or "⏱ End" on the row (or the keys ‎[‎ and ‎]‎ on the selected sentence) |
 | Search for a word | The search box (Ctrl+F). Enter = next result, Shift+Enter = previous, or the arrows ▲▼ |
-| Replace a word | "⇄ Replace" ("⇄ החלפה") (Ctrl+H): type a replacement word, then "Replace" ("החלף") for the highlighted result or "Replace all" ("החלף הכל"). After "Replace all" you can click "Always correct" ("תקן תמיד") |
+| Replace a word | "⇄ Replace" (Ctrl+H): type a replacement word, then "Replace" for the highlighted result or "Replace all". After "Replace all" you can click "Always correct" |
 | Delete a sentence (from the video too) | ✂ next to the sentence, or the Delete key |
 | Split a sentence | Stop playback at the split point and click ⑂ |
 | Join a sentence to the next one | ⤓ |
-| Shorten long pauses | "Shorten pauses" ("קצר הפסקות") – the sections to be deleted are marked in red |
-| Mark umm / uhh | "Filler words" ("מילות מילוי") |
-| Cut a section manually | "Manual cut" ("חיתוך ידני"), then drag on the upper waveform |
+| Shorten long pauses | "Shorten pauses" – the sections to be deleted are marked in red |
+| Mark umm / uhh | "Filler words" |
+| Cut a section manually | "Manual cut", then drag on the upper waveform |
 | Undo a cut | Double-click the red section |
-| Hear the result before exporting | Check "Play without the cuts" ("השמע בלי החיתוכים") |
-| Undo an action | "Undo" ("בטל") or Ctrl+Z |
+| Hear the result before exporting | Check "Play without the cuts" |
+| Undo an action | "Undo" or Ctrl+Z |
 
 Saving is automatic.
 
 ### Speakers
-The **Speakers** (דוברים) button: change "Speaker 1" ("דובר 1") to a real name, and click **Remember voice** (זכור קול). In future recordings the software will recognize this person by name on its own.
+The **Speakers** button: change "Speaker 1" to a real name, and click **Remember voice**. In future recordings the software will recognize this person by name on its own.
 
 ### Settings
-- **Special words** (מילים מיוחדות) – names and terms (for example Meida4U) so they are recognized correctly.
-- **Corrections dictionary** (מילון תיקונים) – a word the software always gets wrong, and what should be written instead.
+- **Special words** – names and terms (for example Meida4U) so they are recognized correctly.
+- **Corrections dictionary** – a word the software always gets wrong, and what should be written instead.
 - Speaker identification sensitivity, pause length for shortening, and subtitle options.
 
 ### ✨ AI assistant
-The **AI assistant** (עוזר AI) tab in the editor (next to "Transcription" ("תמלול")) reads the transcript with Claude:
-- Ready-made buttons: **Summary** (סיכום), **YouTube chapters** (פרקים ליוטיוב), **Key points** (נקודות עיקריות), **Quotes for social media** (ציטוטים לרשתות), **Title and description** (כותרת ותיאור), **Who are the speakers** (מי הדוברים).
+The **AI assistant** tab in the editor (next to "Transcription") reads the transcript with Claude:
+- Ready-made buttons: **Summary**, **YouTube chapters**, **Key points**, **Quotes for social media**, **Title and description**, **Who are the speakers**.
 - You can ask any question about the recording and keep asking follow-up questions.
 - Clicking a time in the answer jumps the video to that moment. When there are cuts, the times can follow the edited version – so the chapters match the video you upload to YouTube.
 - 📋 copies the answer, 💾 saves it to a file in the export folder. The conversation is saved in the project.
 
 **Setup (one time):** open a Claude developer account, create an API key, load credit, and paste the key in one of two ways:
-- In the **‎.env** file in the data folder (**Settings → Data folder → Open** (הגדרות → תיקיית הנתונים → פתח)): right-click → "Open with" → Notepad, paste after `ANTHROPIC_API_KEY=` and save.
-- Or in the assistant tab / in **Settings → AI assistant** (הגדרות → עוזר AI).
+- In the **‎.env** file in the data folder (**Settings → Data folder → Open**): right-click → "Open with" → Notepad, paste after `ANTHROPIC_API_KEY=` and save.
+- Or in the assistant tab / in **Settings → AI assistant**.
 
 A key in the ‎.env file takes precedence over a key entered in the software. **Do not send the ‎.env file to anyone** – whoever has the key uses your credit. That is also where you choose a model (Sonnet is recommended for Hebrew) and see an estimate of the cost. Payment is by usage – usually agorot (cents) per episode. The exact amount appears on the billing page on Claude's website.
 
 ### Export
 - **Edited video** – without everything marked in red and without the deleted sentences, together with a matching subtitle file.
 - **SRT subtitles**, **Word**, **Text**.
-The files are saved in the `exports` folder in the data folder (the "Open the export folder" ("פתח את תיקיית הייצוא") button).
+The files are saved in the `exports` folder in the data folder (the "Open the export folder" button).
 
 ---
 
@@ -91,7 +91,7 @@ The files are saved in the `exports` folder in the data folder (the "Open the ex
   - The shell keeps the engine's process handle. When the engine exits on its own it emits `engine-exited` and the window offers a restart and the log. `restart_engine` kills the whole engine tree (the venv `python.exe` is a launcher with a child) and starts a new one on a new port. `engine_log` returns the tail of `engine.log` in the data folder, also shown under Settings. Only one copy runs (`tauri-plugin-single-instance`); a second launch focuses the existing window.
   - Inspect the page: set `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` before starting the exe. WebView2 is the Edge engine, so H.264 and AAC play natively.
 - `app/server.py` – FastAPI server on `127.0.0.1` (`TAMLUL_PORT`, default 8765), background jobs. With `TAMLUL_TOKEN` set, every `/api` route except `/api/health` requires the token; without it (browser mode) nothing changes. Also: a tkinter file picker for browser mode, ranged media streaming. `.venv\Scripts\python.exe app\server.py` works on its own and opens the browser.
-- `app/engine.py` – models in `models\` next to the code, or `TAMLUL_MODELS`. faster-whisper with `ivrit-ai/whisper-large-v3-turbo-ct2` (CUDA float16, CPU int8 fallback), hotwords for vocabulary, SpeechBrain ECAPA voice prints for speaker clustering and enrollment (`data/speakers.json`), correction dictionary (keeps Hebrew prefixes ו/ה/ב/ל/מ/ש/כ).
+- `app/engine.py` – models in `models\` next to the code, or `TAMLUL_MODELS`. faster-whisper with `ivrit-ai/whisper-large-v3-turbo-ct2` (CUDA float16, CPU int8 fallback), hotwords for vocabulary, SpeechBrain ECAPA voice prints for speaker clustering and enrollment (`data/speakers.json`), correction dictionary.
 - `app/media.py` – ffmpeg (imageio-ffmpeg) for waveform peaks, decoding, silence/filler suggestions, and cut export via `select/aselect` with `fps` normalisation; tries `h264_nvenc`, falls back to `libx264`.
 - `app/exporters.py` – SRT / DOCX (RTL) / TXT.
 - `app/ai.py` – Claude Messages API (stdlib urllib, SSE streaming), transcript in a cached system block (`cache_control: ephemeral`) so follow-ups are cheap; key stored in `data/ai.json` and never sent to the browser; `TAMLUL_AI_URL` overrides the endpoint for testing. Chat history in `project.json` → `ai_chat`.
