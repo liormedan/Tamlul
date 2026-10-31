@@ -158,7 +158,7 @@ async function waitForEngineInner(timeoutMs) {
     }
     if (Date.now() - t0 > timeoutMs) {
       fail('המנוע לא עלה', TAURI
-        ? 'מנוע התמלול לא ענה תוך דקה וחצי. היומן מראה מה קרה. אם חסרה התקנה, צריך להריץ את install.bat.'
+        ? 'מנוע התמלול לא ענה תוך דקה וחצי. היומן מראה מה קרה.'
         : 'הפרטים בקובץ data\\engine.log בתיקיית התוכנה. אם חסרה התקנה – להריץ install.bat.');
     }
     await new Promise((res) => setTimeout(res, 500));

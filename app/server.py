@@ -32,9 +32,8 @@ import media  # noqa: E402
 ROOT = APP_DIR.parent
 LEGACY_DATA = ROOT / "data"
 # User data (projects, voice prints, settings, the API key, exports) lives in TAMLUL_DATA when it is set:
-# the Tauri release build points it at %LOCALAPPDATA%\Tamlul, so updating or removing the program never
-# touches it. Without it (development, browser mode, the pywebview window) everything stays next to the
-# program, exactly as before.
+# the Tauri release build points it at %LOCALAPPDATA%\com.liormedan.tamlul, so updating or removing the
+# program never touches it. Without it (debug build, browser mode) everything stays next to the program.
 if os.environ.get("TAMLUL_DATA"):
     DATA = Path(os.environ["TAMLUL_DATA"])
     EXPORTS = DATA / "exports"
@@ -89,8 +88,8 @@ PORT = int(os.environ.get("TAMLUL_PORT", "8765"))
 APP_VERSION = "0.1.0"
 API_VERSION = 1
 # The Tauri shell starts the engine with a random per-launch token. When it is set, every /api call
-# must carry it, so other programs on this computer cannot drive the engine. Browser mode and the
-# pywebview window start without a token and keep working as before.
+# must carry it, so other programs on this computer cannot drive the engine. Browser mode starts
+# without a token.
 TOKEN = os.environ.get("TAMLUL_TOKEN") or None
 
 DEFAULT_SETTINGS = {
@@ -382,9 +381,8 @@ def api_delete_speaker(name: str):
 
 
 # ---------------------------------------------------------------- API: file picker
+# Browser mode only: the Tauri window opens its own dialog (tauri-plugin-dialog).
 _pick_lock = threading.Lock()
-# desktop.py מחליף את זה בדיאלוג של חלון התוכנה: PICK_HOOK(multiple, kind) -> list[str]
-PICK_HOOK = None
 
 
 @app.post("/api/pick")
@@ -394,8 +392,6 @@ async def api_pick(req: Request):
     kind = body.get("kind", "media")
 
     def pick():
-        if PICK_HOOK is not None:
-            return list(PICK_HOOK(multiple, kind) or [])
         import tkinter as tk
         from tkinter import filedialog
         root = tk.Tk()

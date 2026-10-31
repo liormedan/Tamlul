@@ -19,7 +19,7 @@
 
 | מה | גודל | איך משיגים |
 |---|---|---|
-| `.venv/` | ~5GB | `install.bat` בונה אותה (Python 3.11 + torch cu124 + `requirements.txt`). אם מעתיקים מהמחשב הקודם — לתקן את `.venv/pyvenv.cfg` שיצביע על Python 3.11.9 המקומי (כך תוקן כאן: הוא הצביע על משתמש `medan` במחשב אחר) |
+| `.venv/` | ~5GB | לפיתוח בלבד: `install.bat` בונה אותה (Python 3.11 + torch cu124 + `requirements.txt`). אם מעתיקים מהמחשב הקודם — לתקן את `.venv/pyvenv.cfg` שיצביע על Python 3.11.9 המקומי (כך תוקן כאן: הוא הצביע על משתמש `medan` במחשב אחר) |
 | `models/` | ~1.7GB | `install.bat` מוריד אותם (`app/setup_models.py`), או מעתיקים |
 | `.env` | — | נוצר מ-`.env.example` בהפעלה הראשונה. מפתח ה-API של Claude מדביקים ידנית. **לא להעביר דרך git** |
 | `data/` | — | פרויקטים, טביעות קול, הגדרות, `data/ai.json` (מכיל מפתח API). נוצר ריק לבד |
@@ -41,7 +41,6 @@ cd src-tauri && cargo build
 הפעלה מתוך שורש המאגר. אחרת מגדירים `TAMLUL_HOME` לשורש.
 
 בלי טאורי:
-- `start.bat` — חלון pywebview.
 - `.venv\Scripts\python.exe app\server.py` — דפדפן.
 - `TAMLUL_FAKE=1` — בלי מודלים, משפטים מזויפים. מתאים לפיתוח ממשק.
 
@@ -71,7 +70,7 @@ cd src-tauri && cargo build
 3. ~~**אייקונים**~~ — נפתר בשלב 4: `src-tauri/icons/source.svg`.
 4. ~~**פורט 8765 קבוע**~~ — נפתר בשלב 1: פורט דינמי וטוקן לכל הפעלה.
 5. **PR מ-`tauri` ל-`main`** — רק באישור של Lior.
-6. **ניקוי:** `app/static/index1.html` נראה שארית. ה-README מזכיר `installer/tamlul.nsi` שלא קיים.
+6. ~~**ניקוי**~~ — נעשה בשלב 5: `app/desktop.py`, ‏`start.bat`, ‏`index1.html` ו-pywebview הוסרו. `install.bat` נשאר רק להקמת סביבת פיתוח (`.venv` ו-`models\` בריפו), בלי קיצור דרך.
 7. **חיסכון בזיכרון (רעיון, לא נבדק):** להחליף את מנוע התמלול ב-whisper.cpp עם מודל מכווץ. צריך לבדוק אם ivrit.ai מפרסמים גרסה כזו ומה המחיר בדיוק.
 
 ## עבודה עם Lior
