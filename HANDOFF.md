@@ -1,6 +1,6 @@
 # העברה לסוכן הבא — Tamlul
 
-עודכן: 2026-10-30 (שישי). נכתב בסוף סשן במחשב הראשון; העבודה ממשיכה במחשב אחר.
+עודכן: 2026-10-31 (שבת), אחרי שלב 5. נכתב לראשונה בסוף סשן במחשב הראשון; העבודה ממשיכה במחשב אחר.
 
 ## מה זה
 
@@ -11,7 +11,7 @@
 | ענף | קומיט אחרון | מה יש בו |
 |---|---|---|
 | `main` | `4949b04` | הקוד המקורי מהדרייב + חלון דסקטופ ב-pywebview (`app/desktop.py`, `start.bat`) |
-| `tauri` | הקומיט של הקובץ הזה, מעל `c654a6b` | מעטפת Tauri 2 סביב המנוע. **הענף הפעיל.** לא מוזג ל-`main`, אין PR |
+| `tauri` | הקומיט של הקובץ הזה | מעטפת Tauri 2, מתקין ואשף התקנה (שלבים 0–5). **הענף הפעיל.** PR #1 ל-`main` פתוח, לא מוזג |
 
 מאגר פרטי: `https://github.com/liormedan/Tamlul`.
 
@@ -69,7 +69,7 @@ cd src-tauri && cargo build
 2. ~~**מתקין**~~ — נפתר בשלב 4: NSIS של טאורי ואשף התקנה בהפעלה הראשונה. נשאר: חתימת קוד (SmartScreen מזהיר בהפעלה ראשונה).
 3. ~~**אייקונים**~~ — נפתר בשלב 4: `src-tauri/icons/source.svg`.
 4. ~~**פורט 8765 קבוע**~~ — נפתר בשלב 1: פורט דינמי וטוקן לכל הפעלה.
-5. **PR מ-`tauri` ל-`main`** — רק באישור של Lior.
+5. ~~**PR מ-`tauri` ל-`main`**~~ — נפתח באישור של Lior: https://github.com/liormedan/Tamlul/pull/1. המיזוג רק באישור שלו.
 6. ~~**ניקוי**~~ — נעשה בשלב 5: `app/desktop.py`, ‏`start.bat`, ‏`index1.html` ו-pywebview הוסרו. `install.bat` נשאר רק להקמת סביבת פיתוח (`.venv` ו-`models\` בריפו), בלי קיצור דרך.
 7. **חיסכון בזיכרון (רעיון, לא נבדק):** להחליף את מנוע התמלול ב-whisper.cpp עם מודל מכווץ. צריך לבדוק אם ivrit.ai מפרסמים גרסה כזו ומה המחיר בדיוק.
 
@@ -87,4 +87,5 @@ cd src-tauri && cargo build
 - computer-use לא מכיר exe שלא מותקן (`tamlul.exe`). חלופה: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` לפני ההפעלה, ואז CDP דרך `http://127.0.0.1:9333/json` — לבחור את ה-target שה-URL שלו `tauri.localhost`.
 - המחשב הקודם: C פנוי ~29GB. לבדוק מקום לפני `cargo build` ו-`install.bat`.
 - **קישורים מתחת ל-`%LOCALAPPDATA%` במחשב הזה:** ב-Temp וב-V: הם עובדים, ישירות מתחת ל-`%LOCALAPPDATA%` לא (גם מחוץ לסנדבוקס). שתי תופעות: `uv python install` נכשל ב-"Missing expected target directory for Python minor version link" אחרי ש-Python כבר הותקן, ו-huggingface_hub נכשל ב-WinError 1314 על symlink, למרות שהבדיקה שלו עברה. הטיפול: באשף, שלב ה-Python מצליח כשיש `python.exe` ו-`uv venv` מקבל את הנתיב המלא. ב-`engine.py` המודלים נשמרים כקבצים אמיתיים בלי symlinks.
+- **בדיקת המתקין עם ממשק:** חלון המתקין או המסיר קופץ לחזית ותופס הקלדה או Enter של מי שעובד במחשב באותו רגע. כך דף האישור של המסיר עבר פעמיים להסרה בלי שנלחץ "הסר". הנתונים נשארו, כי "מחק גם…" לא מסומן כברירת מחדל. כדאי לצלם עם PrintWindow ולבטל עם `PostMessage(hwnd, WM_COMMAND, IDCANCEL)` ולא במקלדת. המתקין בוחר שפה לפי שפת ההתקנה של Windows. כאן היא he-IL (ממשק המשתמש en-US), ולכן הוא עלה בעברית. ב-Windows שכולו באנגלית הוא יעלה באנגלית.
 - **uv venv בלי setuptools:** ‏ctranslate2 4.5 מייבא `pkg_resources`, ולכן `setuptools==75.8.0` נמצא ב-`requirements.txt`.

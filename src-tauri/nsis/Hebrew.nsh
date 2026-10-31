@@ -38,5 +38,5 @@ LangString uninstallBeforeInstalling ${LANG_HEBREW} "הסר לפני ההתקנ�
 
 LangString unknown ${LANG_HEBREW} "לא ידועה"
 
-LangString deleteAppData ${LANG_HEBREW} "מחק גם את הפרויקטים, ההגדרות ומנוע התמלול שהורד (כ-7GB)"
+LangString deleteAppData ${LANG_HEBREW} "מחק גם את הפרויקטים, ההגדרות ומנוע התמלול שהורד (כ-7 ג״ב)"
 
