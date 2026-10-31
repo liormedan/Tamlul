@@ -1,0 +1,438 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>תמלול במנוי</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one column for a side pane. Summary and sprint strip first, then the local/cloud split, phases with sprints and tasks, decisions, risks.
+   Same token family as the Tauri plan, so the two pages read as one project. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #15202b;
+  --muted: #5a6777;
+  --line: #dde2e9;
+  --accent: #0d7a72;
+  --accent-soft: #e0f1ef;
+  --done: #2e8a4b;
+  --doing: #a8701a;
+  --todo: #9aa4b2;
+  --risk: #bf3f0c;
+  --warn-soft: #f8efdc;
+  --lock: #5b4bb5;
+  --lock-soft: #ebe8f8;
+  --font-body: "IBM Plex Sans Hebrew", "Segoe UI", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1319; --surface: #151c24; --ink: #e5eaf0; --muted: #93a0b0; --line: #26303b;
+    --accent: #3fc2b4; --accent-soft: #123330; --done: #5cc07c; --doing: #e1a94c; --todo: #5f6b7a;
+    --risk: #f08550; --warn-soft: #362b17; --lock: #a99cf0; --lock-soft: #241f42; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #151c24; --ink: #e5eaf0; --muted: #93a0b0; --line: #26303b;
+  --accent: #3fc2b4; --accent-soft: #123330; --done: #5cc07c; --doing: #e1a94c; --todo: #5f6b7a;
+  --risk: #f08550; --warn-soft: #362b17; --lock: #a99cf0; --lock-soft: #241f42; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.25; }
+h1 { font-size: 1.75rem; font-weight: 700; }
+h2 { font-size: 1.15rem; font-weight: 700; }
+h3 { font-size: 1rem; font-weight: 600; }
+p { margin: 0; }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+code, .mono { font-family: var(--font-mono); font-size: 0.85em; direction: ltr; unicode-bidi: isolate; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+a { color: var(--accent); }
+
+header { display: flex; flex-direction: column; gap: 10px; }
+.lede { color: var(--muted); max-width: 62ch; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 0.85rem; color: var(--muted); }
+.stats b { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* sprint strip: one cell per sprint */
+.strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 4px; }
+.strip a { text-decoration: none; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.strip i { display: block; height: 30px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line); }
+.strip a.next i { border-color: var(--doing); background: var(--warn-soft); }
+.strip a.done i { background: var(--accent-soft); border-color: var(--done); }
+.strip a.lock i { background: var(--lock-soft); border-color: var(--lock); }
+.strip span { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.strip-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.75rem; color: var(--muted); }
+.strip-legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 6px; vertical-align: -1px; border: 1px solid var(--line); background: var(--surface); }
+.strip-legend .l-next::before { border-color: var(--doing); background: var(--warn-soft); }
+.strip-legend .l-lock::before { border-color: var(--lock); background: var(--lock-soft); }
+
+.sec { display: flex; flex-direction: column; gap: 12px; }
+.sec > header { gap: 4px; }
+
+.note { background: var(--lock-soft); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.note h3 { color: var(--lock); }
+.note ul { margin: 0; padding-inline-start: 1.2rem; font-size: 0.88rem; }
+.note li { margin: 2px 0; }
+
+/* local vs cloud: two columns, what stays on the PC and the little that goes online */
+.split { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+@media (max-width: 620px) { .split { grid-template-columns: 1fr; } }
+.side { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.side.pc { border-color: var(--accent); }
+.side .tag { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; color: var(--accent); }
+.side.cloud .tag { color: var(--muted); }
+.side ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.side li { display: flex; flex-direction: column; border-top: 1px dashed var(--line); padding-top: 8px; min-width: 0; }
+.side li:first-child { border-top: 0; padding-top: 0; }
+.side li b { font-size: 0.9rem; font-weight: 600; }
+.side li span { font-size: 0.82rem; color: var(--muted); }
+.never { font-size: 0.8rem; color: var(--done); font-weight: 600; }
+
+.phase { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; scroll-margin-top: 12px; }
+.phase.lock { border-color: var(--lock); }
+.phase > .ph { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.num { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 0.85rem; background: var(--bg); color: var(--muted); font-variant-numeric: tabular-nums; }
+.phase.doing .num { background: var(--warn-soft); color: var(--doing); }
+.phase.done .num { background: var(--accent-soft); color: var(--done); }
+.phase.lock .num { background: var(--lock-soft); color: var(--lock); }
+.ph .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ph .t span { font-size: 0.8rem; color: var(--muted); }
+.pill { font-size: 0.72rem; font-weight: 600; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.pill.todo { background: var(--bg); color: var(--muted); }
+.pill.doing { background: var(--warn-soft); color: var(--doing); }
+.pill.done { background: var(--accent-soft); color: var(--done); }
+.pill.lock { background: var(--lock-soft); color: var(--lock); }
+.bar { height: 3px; background: var(--bg); }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+
+.sprint { border-top: 1px solid var(--line); scroll-margin-top: 12px; }
+.sprint > .sh { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px 0; }
+.sprint .sid { font-family: var(--font-mono); font-size: 0.78rem; font-weight: 500; color: var(--accent); }
+.phase.lock .sprint .sid { color: var(--lock); }
+.sprint .goal { font-size: 0.88rem; font-weight: 600; }
+.sprint .done-when { margin: 4px 14px 0; font-size: 0.8rem; color: var(--muted); }
+.sprint .done-when b { color: var(--ink); font-weight: 600; }
+ul.tasks { list-style: none; margin: 0; padding: 4px 14px 10px; display: flex; flex-direction: column; }
+.task { display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); align-items: start; font-size: 0.9rem; }
+.task:first-child { border-top: 0; }
+.task .s { width: 14px; height: 14px; margin-top: 4px; border-radius: 50%; border: 2px solid var(--todo); }
+.task.done .s { background: var(--done); border-color: var(--done); }
+.task.next .s { border-color: var(--doing); background: var(--doing); box-shadow: inset 0 0 0 3px var(--surface); }
+.task .b { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.task.done .b > span:first-child { color: var(--muted); }
+.task .who { font-size: 0.72rem; font-weight: 600; color: var(--doing); }
+.task .files { display: flex; flex-wrap: wrap; gap: 4px; }
+.task .files code { background: var(--bg); border-radius: 4px; padding: 0 6px; font-size: 0.75rem; color: var(--muted); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card .rec { font-size: 0.85rem; color: var(--ink); }
+.card .rec b { color: var(--accent); }
+.card p { font-size: 0.84rem; color: var(--muted); }
+.risk { border-inline-start: 3px solid var(--todo); }
+.risk.high { border-inline-start-color: var(--risk); }
+.risk.med { border-inline-start-color: var(--doing); }
+.sev { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; color: var(--muted); }
+.risk.high .sev { color: var(--risk); }
+.risk.med .sev { color: var(--doing); }
+footer { font-size: 0.78rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 520px) {
+  .strip { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+</style>
+
+<div class="wrap" dir="rtl" lang="he">
+
+<header>
+  <div class="eyebrow"><span class="ltr">liormedan/Tamlul · ענף saas · 90f858c</span></div>
+  <h1>תמלול במנוי</h1>
+  <p class="lede">תוכנה במנוי שכל העבודה בה נעשית במחשב של המשתמש. הקבצים, התמלול והעריכה לא עולים לשום שרת. הענן משמש רק לאתר, לעדכונים, לחשבון ולרישיון, לתשלום, ולעוזר ה-AI כשמשתמשים בו. רישום, אימות ותשלום נבנים בסוף.</p>
+  <div class="stats">
+    <span>שלבים <b id="cPhases">0</b></span>
+    <span>ספרינטים <b id="cSprints">0</b> (שבוע כל אחד)</span>
+    <span>משימות שהושלמו <b id="cDone">0</b> מתוך <b id="cAll">0</b></span>
+    <span>הבא: <b>S0 · יסודות והחלטות</b></span>
+  </div>
+</header>
+
+<section class="sec" aria-label="ספרינטים">
+  <nav class="strip" id="strip"></nav>
+  <div class="strip-legend"><span class="l-next">הספרינט הבא</span><span>מתוכנן</span><span class="l-lock">חשבון, רישיון ותשלום (בסוף)</span></div>
+</section>
+
+<section class="sec">
+  <header><h2>מה נשאר במחשב ומה בענן</h2><p class="lede">כמו שהתוכנה עובדת היום. מה שנוסף בענן לא נוגע בקבצים של המשתמש.</p></header>
+  <div class="split">
+    <div class="side pc">
+      <span class="tag">במחשב של המשתמש</span>
+      <ul>
+        <li><b>אפליקציית Tauri</b><span>החלון, העורך, ציר הזמן וההגדרות.</span></li>
+        <li><b>מנוע התמלול</b><span>Whisper של ivrit.ai וזיהוי דוברים, על כרטיס המסך או על המעבד.</span></li>
+        <li><b>הקבצים והפרויקטים</b><span>וידאו, אודיו, תמלולים, קולות שמורים וייצוא. בתיקיית הנתונים, כמו היום.</span></li>
+        <li><b>רישיון חתום</b><span>נשמר במחשב ונבדק בלי אינטרנט, עם חידוש תקופתי.</span></li>
+      </ul>
+      <span class="never">וידאו, אודיו ותמלולים לא יוצאים מהמחשב.</span>
+    </div>
+    <div class="side cloud">
+      <span class="tag">בענן (דק)</span>
+      <ul>
+        <li><b>אתר והורדות</b><span>דף נחיתה, מחירון, עזרה, ומתקין חתום.</span></li>
+        <li><b>שרת עדכונים</b><span>קובץ גרסאות חתום לעדכון אוטומטי.</span></li>
+        <li><b>חשבון ורישיון</b><span>Supabase Auth ושירות שמנפיק רישיון. נבנה בסוף.</span></li>
+        <li><b>תשלום</b><span>Stripe וחשבוניות. נבנה בסוף.</span></li>
+        <li><b>שער ל-AI</b><span>מעביר את טקסט התמלול ל-Claude רק כשמשתמשים בעוזר, ולא שומר אותו.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="note" aria-label="איך בונים בלי התחברות עד הסוף">
+  <h3>איך בונים בלי חשבון ורישיון עד הסוף</h3>
+  <ul>
+    <li>האפליקציה שואלת על הרשאות בנקודה אחת, <code>license()</code>. עד S10 היא מחזירה "מלא" לכולם.</li>
+    <li>הגבלות של ניסיון או מסלול נבנות כדגלים (feature flags) שכבר נקראים מ-<code>license()</code>, ולכן ב-S10 משתנה רק המקור שלהם.</li>
+    <li>שער ה-AI וערוץ הבטא של העדכונים סגורים בטוקן בטא משותף. הוא יוחלף ברישיון ב-S10.</li>
+    <li>מונים מקומיים לשימוש (שעות שתומללו, שימוש ב-AI) נשמרים כבר מ-S4, לתצוגה במסך המנוי בהמשך.</li>
+  </ul>
+</section>
+
+<section class="sec" id="phases">
+  <header><h2>שלבים וספרינטים</h2><p class="lede">כל ספרינט מסתיים בגרסה שאפשר להתקין ולבדוק. הסדר: הפצה ועדכונים, מנוע יציב על יותר מחשבים, עבודת UI/UX, AI, אתר ואיכות, ובסוף חשבון, רישיון ותשלום.</p></header>
+
+  <!-- phase 0 -->
+  <article class="phase doing" id="p0">
+    <div class="ph"><span class="num">0</span><div class="t"><h3>יסודות והחלטות</h3><span>מה מוכרים, למי, ובאילו מחשבים זה רץ</span></div><span class="pill doing">הבא</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S0">
+      <div class="sh"><span class="sid">S0</span><span class="goal">החלטות, חשבונות ודרישות מערכת</span></div>
+      <p class="done-when"><b>סיום:</b> PR #1 מוזג, ענף <code>saas</code> פתוח, ויש טבלה של זמן תמלול לשעת אודיו בכמה סוגי מחשבים.</p>
+      <ul class="tasks">
+        <li class="task done"><span class="s"></span><span class="b"><span>החלטות: נסגרו לפי ההמלצות (ראו "החלטות" למטה). נרשמו ב-<code>HANDOFF.md</code>.</span></span></li>
+        <li class="task done"><span class="s"></span><span class="b"><span>ענף <code>saas</code> נפתח, <code>main</code> מוזג אליו, והוא נדחף ל-GitHub.</span></span></li>
+        <li class="task done"><span class="s"></span><span class="b"><span>מדידה במחשב של Lior (i7-8700): שעת אודיו לוקחת כ-14 דקות על GTX 1660 Ti, וכ-51 דקות על המעבד בלבד.</span><span class="files"><code>tools/bench.py</code> <code>tools/bench-results.jsonl</code></span></span></li>
+        <li class="task done"><span class="s"></span><span class="b"><span>PR #1 מוזג ל-<code>main</code> באישור של Lior (<code>aab8074</code>).</span></span></li>
+        <li class="task next"><span class="s"></span><span class="b"><span>חשבונות: Vercel, Sentry ו-Stripe (נפתח עכשיו כי אימות עסק לוקח זמן).</span><span class="who">Lior</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מדידה על כרטיס חזק יותר (RTX), כשיהיה מחשב כזה זמין.</span></span></li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- phase 1 -->
+  <article class="phase doing" id="p1">
+    <div class="ph"><span class="num">1</span><div class="t"><h3>הפצה ועדכונים</h3><span>מתקין חתום, ועדכון אוטומטי בלי להוריד שוב 5GB</span></div><span class="pill doing">בתהליך</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S1">
+      <div class="sh"><span class="sid">S1</span><span class="goal">בנייה וחתימה אוטומטיות</span></div>
+      <p class="done-when"><b>סיום:</b> תגית גרסה ב-git בונה מתקין ב-GitHub Actions. חתימת קוד<sup>*</sup> תטופל אחרי הספרינטים.</p>
+      <ul class="tasks">
+        <li class="task done"><span class="s"></span><span class="b"><span>Workflow להפצה ול-CI נכתב ונבדק מקומית; בניית מתקין Windows לא חתום הצליחה.</span><span class="files"><code>.github/workflows/release.yml</code> <code>.github/workflows/ci.yml</code></span></span></li>
+        <li class="task done"><span class="s"></span><span class="b"><span>התקנה שקטה לתיקייה מבודדת ו-<code>/api/health</code> נבדקו: גרסת הבדיקה דווחה נכון, בלי לגעת בנתוני המשתמש.</span><span class="files"><code>src-tauri/target/</code></span></span></li>
+        <li class="task next"><span class="s"></span><span class="b"><span>הרצת GitHub Actions בפועל ויצירת Release כטיוטה אחרי דחיפת העבודה ותגית בדיקה.</span><span class="who">ממתין לאישור של Lior לדחיפה</span><span class="files"><code>v*</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>חתימת קוד למתקין ול-<code>tamlul.exe</code><sup>*</sup>.</span><span class="who">תצורת החתימה מוכנה; התעודה תטופל אחרי הספרינטים</span></span></li>
+        <li class="task done"><span class="s"></span><span class="b"><span>מספור גרסאות אחד ל-Tauri, ל-Cargo ולמנוע (<code>APP_VERSION</code>).</span><span class="files"><code>tauri.conf.json</code> <code>app/server.py</code></span></span></li>
+        <li class="task done"><span class="s"></span><span class="b"><span>תמונות צד וכותרת למתקין בעיצוב של Tamlul.</span><span class="files"><code>src-tauri/nsis/</code></span></span></li>
+      </ul>
+    </div>
+    <div class="sprint" id="S2">
+      <div class="sh"><span class="sid">S2</span><span class="goal">עדכון אוטומטי וערוצים</span></div>
+      <p class="done-when"><b>סיום:</b> גרסה מותקנת מתעדכנת לבאה אחריה בלחיצה, ומנוע התמלול שכבר הורד נשאר.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>Tauri updater עם קובץ גרסאות חתום, ב-GitHub Releases או ב-Vercel.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>ערוץ בטא וערוץ יציב.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>עדכון של המנוע (חבילות פייתון) בלי להוריד מחדש את המודלים, כשמשתנה <code>requirements.txt</code>.</span><span class="files"><code>src-tauri/src/setup.rs</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>הודעה "יש גרסה חדשה" בעורך, עם רשימת שינויים קצרה.</span></span></li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- phase 2 -->
+  <article class="phase" id="p2">
+    <div class="ph"><span class="num">2</span><div class="t"><h3>מנוע מקומי יציב</h3><span>שירוץ טוב על יותר מחשבים ועם קבצים ארוכים</span></div><span class="pill todo">מתוכנן</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S3">
+      <div class="sh"><span class="sid">S3</span><span class="goal">כיסוי חומרה</span></div>
+      <p class="done-when"><b>סיום:</b> התוכנה מתמללת במחשב בלי NVIDIA, ואומרת מראש כמה זמן זה ייקח.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>מצב מעבד: הורדת חבילת torch בלי CUDA, מודל מתאים, והערכת זמן לפני התחלה.</span><span class="files"><code>app/engine.py</code> <code>src-tauri/src/setup.rs</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>כרטיסים עם מעט זיכרון: מעבר אוטומטי ל-int8 כשאין מספיק VRAM.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>בדיקת דרישות באשף ההתקנה: מקום בדיסק, זיכרון, כרטיס מסך, גרסת Windows.</span><span class="files"><code>app/static/setup.js</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>בדיקה על מחשב בלי NVIDIA.</span><span class="who">צריך מחשב שני</span></span></li>
+      </ul>
+    </div>
+    <div class="sprint" id="S4">
+      <div class="sh"><span class="sid">S4</span><span class="goal">אמינות</span></div>
+      <p class="done-when"><b>סיום:</b> הקלטה של שלוש שעות מתומללת, ואם המנוע נופל באמצע, התמלול ממשיך מאיפה שעצר.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>תמלול בחלקים עם שמירת התקדמות, כדי להמשיך אחרי נפילה או סגירה.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>שימוש בזיכרון בקבצים ארוכים, וסגירת המודל כשלא משתמשים בו.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>קבצים שזזו או נמחקו: הודעה ברורה ובחירה מחדש של הקובץ.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מונים מקומיים לשימוש: שעות שתומללו, שאלות לעוזר.</span></span></li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- phase 3 -->
+  <article class="phase" id="p3">
+    <div class="ph"><span class="num">3</span><div class="t"><h3>UI/UX</h3><span>מבנה קוד חדש, ואז מסך אחרי מסך</span></div><span class="pill todo">מתוכנן</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S5">
+      <div class="sh"><span class="sid">S5</span><span class="goal">מבנה הקוד ומערכת עיצוב</span></div>
+      <p class="done-when"><b>סיום:</b> הממשק נבנה מ-Vite ומתנהג בדיוק כמו היום, וכל הצבעים, הרווחים והגדלים באים ממשתנים.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>Vite ו-TypeScript, ופיצול <code>app.js</code> למודולים: API, עורך, גלים, AI, הגדרות. בלי לשנות התנהגות.</span><span class="files"><code>app/static/app.js</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מערכת עיצוב: צבעים (המצב הכהה כבר בנוי), טיפוגרפיה, רווחים, כפתורים, שדות וחלונות.</span><span class="files"><code>app/static/style.css</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>אייקונים אחידים במקום אימוג'י בכפתורים.</span></span></li>
+      </ul>
+    </div>
+    <div class="sprint" id="S6">
+      <div class="sh"><span class="sid">S6</span><span class="goal">מסך הבית, פרויקט חדש והתחלה ראשונה</span></div>
+      <p class="done-when"><b>סיום:</b> משתמש חדש מגיע מההתקנה לתמלול ראשון בלי הסבר מבחוץ.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>מסך הבית: גרירת קובץ, רשימת פרויקטים עם חיפוש, תמונה ממוזערת, משך וסטטוס.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>פרויקט חדש: ערוצים נפרדים בצורה ברורה, והערכת זמן לפי החומרה.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מסך התקדמות התמלול: שלבים, זמן שנותר, ואפשרות להמשיך לעבוד על פרויקט אחר.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>היכרות ראשונה: קובץ דוגמה קצר וסיור של שלושה צעדים בעורך.</span></span></li>
+      </ul>
+    </div>
+    <div class="sprint" id="S7">
+      <div class="sh"><span class="sid">S7</span><span class="goal">העורך וציר הזמן</span></div>
+      <p class="done-when"><b>סיום:</b> כל פעולה בטבלה של ה-README זמינה גם מהמקלדת, ומופיעה בחלון קיצורים.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>שורת המשפט: פחות כפתורים גלויים, ותפריט פעולות בריחוף.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>ציר הזמן: זום, גלילה, וסימון ברור של חיתוכים ומשפטים.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>חלון קיצורי מקלדת (<code>?</code>), ומיקוד מקלדת גלוי בכל מקום.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>נגישות: ניגודיות, תוויות לקוראי מסך, וגודל טקסט.</span></span></li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- phase 4 -->
+  <article class="phase" id="p4">
+    <div class="ph"><span class="num">4</span><div class="t"><h3>עוזר AI</h3><span>החלק היחיד ששולח טקסט החוצה, ורק כשמבקשים</span></div><span class="pill todo">מתוכנן</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S8">
+      <div class="sh"><span class="sid">S8</span><span class="goal">שער AI, הסכמה ומכסה</span></div>
+      <p class="done-when"><b>סיום:</b> העוזר עובד בלי מפתח מהמשתמש, אחרי הסכמה מפורשת, והשער לא שומר שום טקסט.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>שער דק (Vercel Function): מקבל את הטקסט, מוסיף את מפתח המערכת, מזרים את התשובה, ולא שומר כלום.</span><span class="files"><code>gateway/</code> <code>app/ai.py</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>הסכמה בשימוש הראשון: "טקסט התמלול יישלח ל-Claude כדי לענות". הקבצים עצמם לא נשלחים.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מכסה לכל התקנה (בטוקן בטא עד S10), ו-prompt caching על התמלול.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מפתח אישי נשאר כאפשרות למי שרוצה (כמו היום).</span></span></li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- phase 5 -->
+  <article class="phase" id="p5">
+    <div class="ph"><span class="num">5</span><div class="t"><h3>אתר, משפטי ואיכות</h3><span>מה שצריך לפני שזרים מורידים את התוכנה</span></div><span class="pill todo">מתוכנן</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S9">
+      <div class="sh"><span class="sid">S9</span><span class="goal">אתר, דפים משפטיים, דיווח תקלות ובדיקות</span></div>
+      <p class="done-when"><b>סיום:</b> האתר באוויר עם כפתור הורדה, ותקלה בתוכנה מגיעה ל-Sentry (באישור המשתמש) בלי תוכן מהקבצים.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>אתר: דף נחיתה, מחירון, הורדה, דרישות מערכת ועזרה. ב-Vercel.</span><span class="files"><code>site/</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>תנאי שימוש ורישיון (EULA), מדיניות פרטיות שמסבירה מה נשאר במחשב, והצהרת נגישות לאתר.</span><span class="who">ניסוח סופי: Lior ויועץ משפטי</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>דיווח תקלות ל-Sentry, באישור, בלי שמות קבצים ובלי טקסט.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>בדיקות אוטומטיות לזרימה: פרויקט חדש, תמלול, עריכה, ייצוא. ריצה ב-CI על קובץ קצר.</span><span class="files"><code>tests/e2e/</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>בדיקה ידנית לפני כל גרסה: Windows 10 ו-11, עם NVIDIA ובלי.</span></span></li>
+      </ul>
+    </div>
+  </article>
+
+  <!-- phase 6: last -->
+  <article class="phase lock" id="p6">
+    <div class="ph"><span class="num">6</span><div class="t"><h3>חשבון, רישיון ותשלום</h3><span>בכוונה בסוף: מחליפים את <code>license()</code> שמחזיר "מלא" ברישיון אמיתי</span></div><span class="pill lock">בסוף</span></div>
+    <div class="bar"><i></i></div>
+    <div class="sprint" id="S10">
+      <div class="sh"><span class="sid">S10</span><span class="goal">רישום, התחברות ורישיון</span></div>
+      <p class="done-when"><b>סיום:</b> משתמש נרשם באתר, מתחבר מהתוכנה, והתוכנה עובדת שבועיים בלי אינטרנט לפני שהיא מבקשת לחדש.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>Supabase Auth באתר: מייל וסיסמה, Google, אימות מייל, איפוס סיסמה.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>התחברות מהתוכנה דרך הדפדפן, וחזרה לתוכנה בקישור <code>tamlul://</code>.</span><span class="files"><code>src-tauri/src/lib.rs</code></span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>רישיון חתום (JWT) שנשמר במחשב ונבדק בלי אינטרנט, עם תקופת חסד ומגבלת מחשבים.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span><code>license()</code> קורא את הרישיון. שער ה-AI וערוץ הבטא עוברים מטוקן בטא לרישיון.</span></span></li>
+      </ul>
+    </div>
+    <div class="sprint" id="S11">
+      <div class="sh"><span class="sid">S11</span><span class="goal">תשלום, ניסיון והשקה</span></div>
+      <p class="done-when"><b>סיום:</b> משתמש בטא מוריד, מנסה, משלם ומקבל חשבונית. כשהמנוי נגמר התוכנה אומרת את זה בבירור, והפרויקטים שלו נשארים פתוחים לקריאה ולייצוא.</p>
+      <ul class="tasks">
+        <li class="task"><span class="s"></span><span class="b"><span>Stripe: מסלולים, תקופת ניסיון, Checkout, webhooks שמעדכנים את הרישיון, ופורטל לקוח.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>מסך מנוי בתוכנה: מסלול, תאריך חידוש, שימוש מהמונים המקומיים.</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>חשבונית מס ישראלית דרך שירות חשבוניות.</span><span class="who">בחירת שירות: Lior</span></span></li>
+        <li class="task"><span class="s"></span><span class="b"><span>בטא סגורה עם כמה משתמשים, תיקונים, ואז השקה.</span></span></li>
+      </ul>
+    </div>
+  </article>
+</section>
+
+<p class="lede"><sup>*</sup> תעודת חתימת הקוד והפעלת החתימה בפועל יטופלו אחרי השלמת הספרינטים; הן לא חוסמות את ההתקדמות בהם.</p>
+
+<section class="sec">
+  <header><h2>החלטות</h2><p class="lede">נסגרו ב-S0 (2026-10-31) לפי ההמלצות.</p></header>
+  <div class="cards">
+    <div class="card"><h3>עוזר ה-AI</h3><p class="rec">הוחלט: <b>שער של המערכת</b>, ומפתח אישי כאפשרות.</p><p>זו הדרך היחידה להכניס את העוזר למחיר המנוי. הטקסט עובר דרך השער ולא נשמר, והקבצים לא יוצאים בכלל.</p></div>
+    <div class="card"><h3>מודל מחיר</h3><p class="rec">הוחלט: <b>מנוי חודשי ושנתי</b>, עם ניסיון של 14 יום.</p><p>אין עלות שרת לתמלול, כי הוא רץ אצל המשתמש. העלות המשתנה היחידה היא AI, ולכן המכסה היא על העוזר.</p></div>
+    <div class="card"><h3>קהל יעד</h3><p class="rec">הוחלט: <b>יוצרי תוכן ופודקאסטים</b> קודם.</p><p>"הקבצים לא יוצאים מהמחשב" הוא גם יתרון לעיתונאים, מטפלים ועורכי דין. שווה לבדוק אותם בבטא.</p></div>
+    <div class="card"><h3>מה קורה כשהמנוי נגמר</h3><p class="rec">הוחלט: <b>הפרויקטים נשארים פתוחים לקריאה ולייצוא</b>. תמלול חדש ו-AI נעצרים.</p><p>הנתונים של המשתמש אצלו במחשב, ולא נועלים אותם.</p></div>
+  </div>
+</section>
+
+<section class="sec">
+  <header><h2>סיכונים</h2></header>
+  <div class="cards">
+    <div class="card risk high"><span class="sev">גבוה</span><h3>מחשבים חלשים</h3><p>בלי NVIDIA התמלול איטי בהרבה. לכן המדידה ב-S0, דרישות מערכת ברורות באתר, והערכת זמן לפני כל תמלול.</p></div>
+    <div class="card risk high"><span class="sev">גבוה</span><h3>עקיפת רישיון</h3><p>תוכנה מקומית אפשר לפרוץ. הרישיון חתום ונבדק בצד השרת בכל חידוש, וה-AI והעדכונים דורשים רישיון בתוקף. מעבר לזה לא משקיעים.</p></div>
+    <div class="card risk med"><span class="sev">בינוני</span><h3>אזהרת SmartScreen</h3><p>מתקין לא חתום מקבל אזהרה אדומה, ומשתמשים נוטשים. החתימה היא ב-S1, לפני כל הפצה.</p></div>
+    <div class="card risk med"><span class="sev">בינוני</span><h3>עדכון שמשבר את המנוע</h3><p>שינוי בחבילות פייתון יכול להשבית התקנות קיימות. ערוץ בטא, ובדיקה ידנית לפני כל גרסה יציבה.</p></div>
+    <div class="card risk med"><span class="sev">בינוני</span><h3>גודל ההורדה</h3><p>כ-5GB בהתקנה הראשונה. ההורדה כבר ממשיכה אחרי ניתוק. העדכונים לא יורידו שוב את המודלים.</p></div>
+  </div>
+</section>
+
+<footer>
+  <span>עודכן אחרי ההחלטה שכל העבודה נשארת במחשב של המשתמש. נבנה מסריקת הקוד בענף <span class="ltr">tauri</span> (<span class="ltr">817511d</span>). לא היה איפיון כתוב.</span>
+  <span>התוכנית הקודמת, מעבר ל-Tauri: <a href="https://claude.ai/artifact/Qcy4u3mzxHTaxJhF3yK8xn">תמלול על Tauri</a>. שלבים 0–5 הושלמו, ו-PR #1 מוזג ל-main.</span>
+</footer>
+</div>
+
+<script>
+(() => {
+  const all = document.querySelectorAll('.task');
+  const done = document.querySelectorAll('.task.done');
+  document.getElementById('cAll').textContent = all.length;
+  document.getElementById('cDone').textContent = done.length;
+  document.querySelectorAll('.phase').forEach((ph) => {
+    const t = ph.querySelectorAll('.task').length;
+    const d = ph.querySelectorAll('.task.done').length;
+    const bar = ph.querySelector('.bar i');
+    if (bar && t) bar.style.width = Math.round((d / t) * 100) + '%';
+  });
+  const strip = document.getElementById('strip');
+  document.querySelectorAll('.sprint').forEach((s) => {
+    const ph = s.closest('.phase');
+    const tasks = s.querySelectorAll('.task').length;
+    const doneN = s.querySelectorAll('.task.done').length;
+    const a = document.createElement('a');
+    a.href = '#' + s.id;
+    a.title = s.querySelector('.goal').textContent;
+    if (tasks && doneN === tasks) a.classList.add('done');
+    else if (s.querySelector('.task.next')) a.classList.add('next');
+    else if (ph.classList.contains('lock')) a.classList.add('lock');
+    a.innerHTML = '<i></i><span></span>';
+    a.querySelector('span').textContent = s.id;
+    strip.appendChild(a);
+  });
+  document.getElementById('cSprints').textContent = document.querySelectorAll('.sprint').length;
+  document.getElementById('cPhases').textContent = document.querySelectorAll('.phase').length;
+})();
+</script>
+
+</body></html>

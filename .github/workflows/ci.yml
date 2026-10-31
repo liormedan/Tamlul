@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, saas]
+  pull_request:
+    branches: [main, saas]
+
+jobs:
+  checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          cache: false
+      - name: Check versions
+        run: node tools/set-version.mjs --check
+      - name: Compile Python
+        run: python -m compileall app
+      - name: Check JavaScript syntax
+        shell: pwsh
+        run: Get-ChildItem app/static -Filter *.js -File | Where-Object { $_.Directory.Name -ne 'vendor' } | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+      - name: Check Rust
+        working-directory: src-tauri
+        run: cargo check

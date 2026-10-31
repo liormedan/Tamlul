@@ -310,6 +310,7 @@ fn spawn_engine(root: &Path, data: &DataDir, runtime: Option<&Path>, port: u16, 
         .env("TAMLUL_NO_BROWSER", "1")
         .env("TAMLUL_PORT", port.to_string())
         .env("TAMLUL_TOKEN", token)
+        .env("TAMLUL_VERSION", env!("CARGO_PKG_VERSION"))
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUNBUFFERED", "1")
         .stdin(Stdio::null())

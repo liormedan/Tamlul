@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      release_version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          toolchain: stable
+          cache: false
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: windows-cargo-
+      - name: Set and check release version
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $version = $env:GITHUB_REF_NAME -replace '^v', '' }
+          else { $version = (node -p "require('./package.json').version").Trim() }
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "Invalid version: $version" }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "version=$version" >> $env:GITHUB_OUTPUT
+          node tools/set-version.mjs $version
+          node tools/set-version.mjs --check
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Detect signing secrets
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ($env:WINDOWS_CERTIFICATE -and $env:WINDOWS_CERTIFICATE_PASSWORD) {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+            $bytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+            $pfx = Join-Path $env:RUNNER_TEMP 'tamlul-signing.pfx'
+            try {
+              [IO.File]::WriteAllBytes($pfx, $bytes)
+              $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force)
+              if (-not $cert) { throw 'Could not import the signing certificate.' }
+              "CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+            } finally {
+              Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+            }
+          } else {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            '## UNSIGNED BUILD' >> $env:GITHUB_STEP_SUMMARY
+            'No code-signing certificate was configured. Windows SmartScreen may warn users.' >> $env:GITHUB_STEP_SUMMARY
+            Write-Warning 'UNSIGNED BUILD: signing secrets are missing.'
+          }
+      - name: Locate SignTool
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $kits = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+          $signTool = Get-ChildItem -Path $kits -Filter signtool.exe -Recurse -File |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw 'SignTool was not found in the Windows SDK.' }
+          $signTool.Directory.FullName >> $env:GITHUB_PATH
+      - name: Build signed executable
+        if: steps.signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $exe = 'src-tauri/target/release/tamlul.exe'
+          $env:CARGO_BUILD_JOBS = '2'
+          cargo build --manifest-path src-tauri/Cargo.toml --release
+          signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /sha1 $env:CERT_THUMBPRINT /s My $exe
+      - name: Build installer
+        shell: pwsh
+        run: |
+          if ('${{ steps.signing.outputs.enabled }}' -eq 'true') {
+            $config = '{"bundle":{"windows":{"certificateThumbprint":"' + $env:CERT_THUMBPRINT + '","timestampUrl":"http://timestamp.digicert.com","digestAlgorithm":"sha256","signCommand":"signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /sha1 ' + $env:CERT_THUMBPRINT + ' /s My %1"}}}'
+            [IO.File]::WriteAllText((Join-Path $PWD 'signing-config.json'), $config, [Text.UTF8Encoding]::new($false))
+            $env:CARGO_BUILD_JOBS = '2'
+            npx tauri build --config signing-config.json
+          } else {
+            $env:CARGO_BUILD_JOBS = '2'
+            npx tauri build
+          }
+      - name: Verify installer and checksums
+        shell: pwsh
+        run: |
+          $installer = "src-tauri/target/release/bundle/nsis/Tamlul_$env:RELEASE_VERSION`_x64-setup.exe"
+          if (-not (Test-Path -LiteralPath $installer)) { throw "Expected installer not found: $installer" }
+          if ((Split-Path $installer -Leaf) -notlike "*$env:RELEASE_VERSION*") { throw 'Installer filename does not contain the release version.' }
+          Get-FileHash -Algorithm SHA256 $installer | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $installer -Leaf)" } | Set-Content SHA256SUMS.txt -Encoding ascii
+          "INSTALLER_PATH=$installer" >> $env:GITHUB_ENV
+      - name: Stage workflow artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifact -Force | Out-Null
+          Copy-Item -LiteralPath $env:INSTALLER_PATH -Destination artifact
+          Copy-Item -LiteralPath SHA256SUMS.txt -Destination artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tamlul-${{ env.RELEASE_VERSION }}
+          path: |
+            artifact/*
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Tamlul-${{ needs.build.outputs.release_version }}
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $version = '${{ needs.build.outputs.release_version }}'
+          $installer = Get-Item -LiteralPath "Tamlul_${version}_x64-setup.exe"
+          if (-not $installer) { throw 'Installer artifact was not downloaded.' }
+          if ($installer.Name -notlike "*$version*") { throw 'Installer filename does not contain the release version.' }
+          $args = @('release', 'create', $env:GITHUB_REF_NAME, $installer.FullName, 'SHA256SUMS.txt', '--repo', $env:GITHUB_REPOSITORY, '--draft', '--title', "Tamlul $version", '--generate-notes')
+          if ($version.Contains('-')) { $args += '--prerelease' }
+          gh @args
+
+# Azure Trusted Signing can replace signtool via bundle.windows.signCommand once configured:
+# "signCommand": "trusted-signing-cli sign --config-file <config> --input %1"

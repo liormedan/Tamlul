@@ -85,7 +85,7 @@ for d in (DATA, PROJECTS, EXPORTS):
     d.mkdir(parents=True, exist_ok=True)
 
 PORT = int(os.environ.get("TAMLUL_PORT", "8765"))
-APP_VERSION = "0.1.0"
+APP_VERSION = os.environ.get("TAMLUL_VERSION", "dev")
 API_VERSION = 1
 # The Tauri shell starts the engine with a random per-launch token. When it is set, every /api call
 # must carry it, so other programs on this computer cannot drive the engine. Browser mode starts
