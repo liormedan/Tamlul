@@ -122,28 +122,61 @@ jobs:
           name: Tamlul-${{ env.RELEASE_VERSION }}
           path: |
             artifact/*
+  # Public downloads live in a separate public repository that holds only installers
+  # (this source repository is private). GITHUB_TOKEN cannot write to another repository,
+  # so publishing there needs the RELEASES_TOKEN secret: a fine-grained token limited to
+  # PUBLIC_RELEASES_REPO with "Contents: read and write". Without it the draft goes to this
+  # repository, as before. Either way the release stays a draft until it is published by hand.
   release:
     if: github.ref_type == 'tag'
     needs: build
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      PUBLIC_RELEASES_REPO: liormedan/Tamlul-releases
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: Tamlul-${{ needs.build.outputs.release_version }}
       - name: Create draft GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          SOURCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
           $version = '${{ needs.build.outputs.release_version }}'
           $installer = Get-Item -LiteralPath "Tamlul_${version}_x64-setup.exe"
           if (-not $installer) { throw 'Installer artifact was not downloaded.' }
           if ($installer.Name -notlike "*$version*") { throw 'Installer filename does not contain the release version.' }
-          $args = @('release', 'create', $env:GITHUB_REF_NAME, $installer.FullName, 'SHA256SUMS.txt', '--repo', $env:GITHUB_REPOSITORY, '--draft', '--title', "Tamlul $version", '--generate-notes')
-          if ($version.Contains('-')) { $args += '--prerelease' }
+          $prerelease = $version.Contains('-')
+          if ($env:RELEASES_TOKEN) {
+            $env:GH_TOKEN = $env:RELEASES_TOKEN
+            $repo = $env:PUBLIC_RELEASES_REPO
+            # Notes generated from this private repository would expose its commit and PR titles,
+            # so the public draft gets a neutral body to edit before publishing.
+            $sha = (Get-Content SHA256SUMS.txt -Raw).Trim()
+            $kind = if ($prerelease) { 'גרסת בטא.' } else { 'גרסה יציבה.' }
+            $notes = @(
+              "## Tamlul $version", '', $kind, '', '### מה חדש', '', '- ', '',
+              '### התקנה', '',
+              "מורידים את ``$($installer.Name)`` ומריצים. הוראות מלאות ודרישות מערכת: [README](https://github.com/$repo#readme).", '',
+              '### SHA-256', '', '```', $sha, '```'
+            ) -join "`n"
+            [IO.File]::WriteAllText((Join-Path $PWD 'release-notes.md'), $notes, [Text.UTF8Encoding]::new($false))
+            $args = @('release', 'create', $env:GITHUB_REF_NAME, $installer.FullName, 'SHA256SUMS.txt', '--repo', $repo, '--target', 'main', '--draft', '--title', "Tamlul $version", '--notes-file', 'release-notes.md')
+            "Draft release created in the public repository [$repo](https://github.com/$repo/releases). Edit the notes, then publish it." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            $env:GH_TOKEN = $env:SOURCE_TOKEN
+            $repo = $env:GITHUB_REPOSITORY
+            $args = @('release', 'create', $env:GITHUB_REF_NAME, $installer.FullName, 'SHA256SUMS.txt', '--repo', $repo, '--draft', '--title', "Tamlul $version", '--generate-notes')
+            '## PRIVATE DRAFT ONLY' >> $env:GITHUB_STEP_SUMMARY
+            "RELEASES_TOKEN is not set, so the draft was created in this private repository and cannot be downloaded publicly." >> $env:GITHUB_STEP_SUMMARY
+            Write-Warning 'RELEASES_TOKEN is missing: the draft release stays in the private repository.'
+          }
+          if ($prerelease) { $args += '--prerelease' }
           gh @args
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed for $repo" }
 
 # Azure Trusted Signing can replace signtool via bundle.windows.signCommand once configured:
 # "signCommand": "trusted-signing-cli sign --config-file <config> --input %1"
