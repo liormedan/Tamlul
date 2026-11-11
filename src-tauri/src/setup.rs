@@ -20,6 +20,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
 
 pub const READY_FILE: &str = "ready.json";
@@ -42,6 +43,40 @@ pub const STEPS: [&str; 5] = [
 
 pub fn is_ready(runtime: &Path) -> bool {
     runtime.join(READY_FILE).is_file()
+}
+
+fn requirements_hash(root: &Path) -> Result<String, String> {
+    let bytes = fs::read(root.join("requirements.txt")).map_err(|e| format!("לא הצלחתי לקרוא requirements.txt: {e}"))?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+/// The PyTorch pin as installed by step 2. It lives in this file, not in requirements.txt,
+/// because it needs its own index, so ready.json records it separately.
+fn torch_pin() -> String {
+    format!("{} {}", TORCH.join(" "), TORCH_INDEX)
+}
+
+/// The package steps (2: PyTorch, 3: requirements.txt) whose recorded fingerprint in ready.json
+/// differs from this build. A missing fingerprint means the runtime predates the tracking, so
+/// that step runs once; when the packages are already in place uv finishes it in seconds.
+/// Empty when the runtime is not set up yet: the setup wizard handles that case.
+pub fn stale_package_steps(root: &Path, runtime: &Path) -> Vec<usize> {
+    let Ok(current) = requirements_hash(root) else { return Vec::new() };
+    let Ok(ready) = fs::read(runtime.join(READY_FILE)) else { return Vec::new() };
+    let value = serde_json::from_slice::<serde_json::Value>(&ready).unwrap_or_default();
+    let recorded = |key: &str| value.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    let mut steps = Vec::new();
+    if recorded("torch").as_deref() != Some(torch_pin().as_str()) {
+        steps.push(2);
+    }
+    if recorded("requirements_sha256").as_deref() != Some(current.as_str()) {
+        steps.push(3);
+    }
+    steps
+}
+
+pub fn dependency_update_needed(root: &Path, runtime: &Path) -> bool {
+    !stale_package_steps(root, runtime).is_empty()
 }
 
 pub fn venv_python(runtime: &Path) -> PathBuf {
@@ -316,12 +351,65 @@ pub fn run(app: &AppHandle, root: &Path, runtime: &Path) -> Result<serde_json::V
         }
     }
 
-    let ready = serde_json::json!({ "version": 1, "finished": unix_now(), "result": result });
+    let ready = serde_json::json!({
+        "version": 1,
+        "finished": unix_now(),
+        "result": result,
+        "requirements_sha256": requirements_hash(root)?,
+        "torch": torch_pin(),
+    });
     fs::write(runtime.join(READY_FILE), serde_json::to_vec_pretty(&ready).unwrap_or_default())
         .map_err(|e| format!("{}: {e}", runtime.join(READY_FILE).display()))?;
     let _ = fs::remove_dir_all(runtime.join("cache"));
     let _ = writeln!(log, "===== setup finished: {result}");
     Ok(result)
+}
+
+/// Refresh only the Python packages in the existing runtime: PyTorch when its pin changed,
+/// then requirements.txt when it changed. Python, the venv and runtime/models stay as they are.
+///
+/// `uv pip install` adds and upgrades packages but never removes one, so a package dropped
+/// from requirements.txt stays installed (harmless; the engine just does not import it).
+/// `uv pip sync` would remove it, but it would also remove PyTorch, which is installed from
+/// its own index and is not listed in requirements.txt.
+pub fn update_runtime_dependencies(app: &AppHandle, root: &Path, runtime: &Path) -> Result<(), String> {
+    if !is_ready(runtime) {
+        return Err("סביבת המנוע עוד לא הותקנה.".into());
+    }
+    let mut log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(runtime.join(LOG_FILE))
+        .map_err(|e| e.to_string())?;
+    let steps = stale_package_steps(root, runtime);
+    let _ = writeln!(log, "\n===== dependency update started (unix {}), steps {:?}", unix_now(), steps.iter().map(|i| i + 1).collect::<Vec<_>>());
+    for &i in &steps {
+        let _ = writeln!(log, "\n--- step {}: {}", i + 1, STEPS[i]);
+        if let Err(e) = run_step(app, i, step(i, root, runtime), &mut log) {
+            let _ = writeln!(log, "FAILED: {e}");
+            return Err(e);
+        }
+    }
+    let mut ready: serde_json::Value = serde_json::from_slice(&fs::read(runtime.join(READY_FILE)).map_err(|e| e.to_string())?)
+        .map_err(|e| format!("קובץ מצב ההתקנה פגום: {e}"))?;
+    ready["requirements_sha256"] = serde_json::Value::String(requirements_hash(root)?);
+    ready["torch"] = serde_json::Value::String(torch_pin());
+    ready["dependencies_updated"] = serde_json::Value::from(unix_now());
+    let temp = runtime.join("ready.json.tmp");
+    fs::write(&temp, serde_json::to_vec_pretty(&ready).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let marker = runtime.join(READY_FILE);
+    let backup = runtime.join("ready.json.bak");
+    let _ = fs::remove_file(&backup);
+    fs::rename(&marker, &backup).map_err(|e| e.to_string())?;
+    if let Err(error) = fs::rename(&temp, &marker) {
+        let _ = fs::remove_file(&temp);
+        let _ = fs::rename(&backup, &marker);
+        return Err(error.to_string());
+    }
+    let _ = fs::remove_file(backup);
+    let _ = fs::remove_dir_all(runtime.join("cache"));
+    let _ = writeln!(log, "===== dependency update finished");
+    Ok(())
 }
 
 /// Report the outcome of `run` to the window.

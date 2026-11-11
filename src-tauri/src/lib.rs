@@ -54,6 +54,8 @@ struct EngineInfo {
     attached: bool,
     /// The Python runtime is not built yet; the window shows setup.html instead.
     setup_needed: bool,
+    /// The bundled requirements.txt or PyTorch pin changed since this runtime's packages were installed.
+    dependency_update_needed: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -121,7 +123,7 @@ struct Engine(Mutex<EngineState>);
 impl Engine {
     fn new() -> Self {
         Engine(Mutex::new(EngineState {
-            info: EngineInfo { port: 0, token: String::new(), error: None, generation: 0, attached: false, setup_needed: false },
+            info: EngineInfo { port: 0, token: String::new(), error: None, generation: 0, attached: false, setup_needed: false, dependency_update_needed: false },
             child: None,
             root: None,
             data: None,
@@ -144,6 +146,11 @@ fn needs_setup(st: &EngineState) -> bool {
     st.runtime.as_deref().is_some_and(|r| !setup::is_ready(r))
 }
 
+fn needs_dependency_update(st: &EngineState) -> bool {
+    st.root.as_deref().zip(st.runtime.as_deref())
+        .is_some_and(|(root, runtime)| setup::dependency_update_needed(root, runtime))
+}
+
 #[tauri::command]
 fn engine_info(engine: tauri::State<'_, Engine>) -> EngineInfo {
     engine.0.lock().unwrap().info.clone()
@@ -157,7 +164,7 @@ async fn restart_engine(engine: tauri::State<'_, Engine>) -> Result<EngineInfo, 
         if st.info.attached {
             return Err("המנוע הופעל ידנית (TAMLUL_PORT). צריך להפעיל אותו מחדש מבחוץ.".into());
         }
-        if needs_setup(&st) {
+        if needs_setup(&st) || st.setup_running {
             return Err("ההתקנה עוד לא הסתיימה.".into());
         }
         // Taking the child out first keeps the watcher from reporting this exit as a crash.
@@ -169,6 +176,47 @@ async fn restart_engine(engine: tauri::State<'_, Engine>) -> Result<EngineInfo, 
     let mut st = engine.0.lock().unwrap();
     launch(&mut st);
     Ok(st.info.clone())
+}
+
+/// Stop the engine, update only its Python packages, preserve models, and restart it.
+/// The package install takes minutes, so it runs on a blocking worker thread: a plain
+/// (non-async) command would run on the main thread and freeze the window meanwhile.
+#[tauri::command]
+async fn update_engine_dependencies(app: tauri::AppHandle) -> Result<EngineInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || update_dependencies_blocking(&app))
+        .await
+        .map_err(|e| format!("עדכון חבילות המנוע נקטע: {e}"))?
+}
+
+fn update_dependencies_blocking(app: &tauri::AppHandle) -> Result<EngineInfo, String> {
+    let engine = app.state::<Engine>();
+    let (old, root, runtime) = {
+        let mut st = engine.0.lock().unwrap();
+        if st.info.attached {
+            return Err("המנוע הופעל ידנית; עדכון החבילות האוטומטי זמין רק למנוע המנוהל של Tamlul.".into());
+        }
+        if st.setup_running {
+            return Err("סביבת המנוע כבר מתעדכנת.".into());
+        }
+        if !needs_dependency_update(&st) {
+            return Ok(st.info.clone());
+        }
+        let root = st.root.clone().ok_or("app/server.py not found")?;
+        let runtime = st.runtime.clone().ok_or("לא נמצאה סביבת מנוע לעדכון")?;
+        // Blocks restart_engine and a second update until the packages are in place.
+        st.setup_running = true;
+        (st.child.take(), root, runtime)
+    };
+    if let Some(child) = old { kill_tree(child); }
+
+    let outcome = setup::update_runtime_dependencies(app, &root, &runtime);
+    let mut st = engine.0.lock().unwrap();
+    st.setup_running = false;
+    launch(&mut st);
+    match outcome {
+        Ok(()) => Ok(st.info.clone()),
+        Err(error) => Err(format!("עדכון חבילות המנוע נכשל: {error}")),
+    }
 }
 
 /// The last `lines` lines of engine.log (default 200), read from the end of the file.
@@ -331,6 +379,7 @@ fn spawn_engine(root: &Path, data: &DataDir, runtime: Option<&Path>, port: u16, 
 
 /// Start a new engine and record it in `st`: new port, same token, next generation.
 fn launch(st: &mut EngineState) {
+    st.info.dependency_update_needed = needs_dependency_update(st);
     st.info.generation += 1;
     if st.info.token.is_empty() {
         st.info.token = random_token();
@@ -368,6 +417,7 @@ fn start(engine: &Engine) {
             generation: 1,
             attached: true,
             setup_needed: false,
+            dependency_update_needed: false,
         };
         return;
     }
@@ -500,6 +550,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             engine_info,
             restart_engine,
+            update_engine_dependencies,
             engine_log,
             setup_info,
             start_setup,

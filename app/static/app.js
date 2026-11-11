@@ -1865,6 +1865,18 @@ $('#aiKeySave').onclick = async () => {
   try { await connectEngine(); } catch (e) { ENGINE_ERROR = 'engine_info: ' + e; }
   // First launch of an installed copy: the Python runtime is built by the setup wizard first.
   if (ENGINE && ENGINE.setup_needed) { location.replace('setup.html'); return; }
+  if (TAURI && ENGINE && ENGINE.dependency_update_needed && !ENGINE.attached) {
+    const updating = toast('מעדכן את חבילות מנוע התמלול. המודלים הקיימים נשארים במחשב.', { timeout: 0 });
+    try {
+      applyEngineInfo(await TAURI.core.invoke('update_engine_dependencies'));
+      updating.remove();
+      toast('חבילות מנוע התמלול עודכנו. אפשר להמשיך לעבוד.');
+    } catch (e) {
+      updating.remove();
+      try { applyEngineInfo(await TAURI.core.invoke('engine_info')); } catch (_) { /* keep last engine state */ }
+      toast(String(e), { error: true, timeout: 15000 });
+    }
+  }
   try { await waitForEngine(); } catch (_) { return; }
   try { await loadSettings(); } catch (e) { toast('לא מצליח להתחבר לתוכנה: ' + e.message, { error: true }); }
   window.ENROLLED = await api('/api/speakers').catch(() => []);
