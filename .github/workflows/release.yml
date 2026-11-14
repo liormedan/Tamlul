@@ -156,11 +156,11 @@ jobs:
             # Notes generated from this private repository would expose its commit and PR titles,
             # so the public draft gets a neutral body to edit before publishing.
             $sha = (Get-Content SHA256SUMS.txt -Raw).Trim()
-            $kind = if ($prerelease) { 'גרסת בטא.' } else { 'גרסה יציבה.' }
+            $kind = if ($prerelease) { 'Beta release.' } else { 'Stable release.' }
             $notes = @(
-              "## Tamlul $version", '', $kind, '', '### מה חדש', '', '- ', '',
-              '### התקנה', '',
-              "מורידים את ``$($installer.Name)`` ומריצים. הוראות מלאות ודרישות מערכת: [README](https://github.com/$repo#readme).", '',
+              "## Tamlul $version", '', $kind, '', "### What's new", '', '- ', '',
+              '### Install', '',
+              "Download ``$($installer.Name)`` and run it. Full instructions and system requirements: [installation guide](https://liormedan.github.io/Tamlul-releases/docs/install/).", '',
               '### SHA-256', '', '```', $sha, '```'
             ) -join "`n"
             [IO.File]::WriteAllText((Join-Path $PWD 'release-notes.md'), $notes, [Text.UTF8Encoding]::new($false))
